@@ -14,10 +14,17 @@ import (
 func main() {
 	endpoint := flag.String("endpoint", "unix:///var/lib/kubelet/plugins/mergerfs.csi.k8s.io/csi.sock", "CSI endpoint")
 	nodeID := flag.String("node-id", "", "Kubernetes node ID")
+	mode := flag.String("mode", "node", "CSI role: node|controller|all")
 	mergerfsPath := flag.String("mergerfs-path", "mergerfs", "Path to mergerfs binary")
 	kubeletPods := flag.String("kubelet-pods-path", "/var/lib/kubelet/pods", "Kubelet pods directory")
 	stateDir := flag.String("state-dir", "/var/lib/mergerfs-csi", "Directory for pidfiles")
 	flag.Parse()
+
+	m, err := driver.ParseMode(*mode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%v\n", err)
+		os.Exit(1)
+	}
 
 	if *nodeID == "" {
 		*nodeID = os.Getenv("NODE_ID")
@@ -34,6 +41,7 @@ func main() {
 	d, err := driver.NewDefault(driver.Config{
 		Endpoint:        *endpoint,
 		NodeID:          *nodeID,
+		Mode:            m,
 		MergerfsPath:    *mergerfsPath,
 		KubeletPodsPath: *kubeletPods,
 		StateDir:        *stateDir,

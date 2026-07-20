@@ -11,7 +11,7 @@ test:
 	cd $(GO_MOD_DIR) && go test ./...
 
 docker-build:
-	docker build -t $(IMAGE) .
+	docker build --platform=linux/amd64 -t $(IMAGE) .
 
 helm-lint:
 	helm lint $(CHART)

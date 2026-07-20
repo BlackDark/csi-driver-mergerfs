@@ -203,3 +203,63 @@ func TestNodeUnpublishSurfacesUnmountError(t *testing.T) {
 		t.Fatal("expected unmount error surfaced")
 	}
 }
+
+func TestCreateVolumeCopiesParameters(t *testing.T) {
+	d, _ := testDriver(t, "/k", time.Second)
+	d.cfg.Mode = ModeController
+
+	branches := `[{"type":"hostPath","path":"/data/a"}]`
+	opts := "category.create=mfs"
+	resp, err := d.CreateVolume(context.Background(), &csi.CreateVolumeRequest{
+		Name: "pvc-xyz",
+		CapacityRange: &csi.CapacityRange{
+			RequiredBytes: 1 << 30,
+		},
+		VolumeCapabilities: []*csi.VolumeCapability{
+			{
+				AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+				AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_MULTI_NODE_MULTI_WRITER},
+			},
+		},
+		Parameters: map[string]string{
+			"branches":         branches,
+			"mergerfsOptions":  opts,
+			"csi.storage.k8s.io/fstype": "fuse",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Volume.VolumeId != "pvc-xyz" {
+		t.Fatalf("id=%q", resp.Volume.VolumeId)
+	}
+	if resp.Volume.CapacityBytes != 1<<30 {
+		t.Fatalf("cap=%d", resp.Volume.CapacityBytes)
+	}
+	if resp.Volume.VolumeContext["branches"] != branches {
+		t.Fatalf("branches=%q", resp.Volume.VolumeContext["branches"])
+	}
+	if resp.Volume.VolumeContext["mergerfsOptions"] != opts {
+		t.Fatalf("opts=%q", resp.Volume.VolumeContext["mergerfsOptions"])
+	}
+}
+
+func TestGetPluginCapabilitiesController(t *testing.T) {
+	d, _ := testDriver(t, "/k", time.Second)
+	caps, err := d.GetPluginCapabilities(context.Background(), &csi.GetPluginCapabilitiesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(caps.Capabilities) != 0 {
+		t.Fatalf("node mode should have no controller cap, got %+v", caps.Capabilities)
+	}
+
+	d.cfg.Mode = ModeController
+	caps, err = d.GetPluginCapabilities(context.Background(), &csi.GetPluginCapabilitiesRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(caps.Capabilities) != 1 {
+		t.Fatalf("want 1 cap, got %+v", caps.Capabilities)
+	}
+}

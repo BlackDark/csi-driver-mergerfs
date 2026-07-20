@@ -1,17 +1,18 @@
 # mergerfs-csi — Spec (v1)
 
 **Date:** 2026-07-20  
-**Scope:** Track A Phase 1 + Phase 2 (node driver, hostPath + pod volume refs). No dynamic provisioner yet.  
-**Status:** Implemented: Phase 1+2 node driver (in progress)  
+**Scope:** Track A Phase 1–3 (node driver, hostPath + pod volume refs, minimal controller).  
+**Status:** Implemented: Phase 1–3 (controller minimal — CreateVolume/DeleteVolume echo params)  
 **Plan source:** Obsidian `plans/2026-07-12-mergerfs-csi-k8s`
 
 ## Goal
 
-Node-local Kubernetes CSI driver that runs `mergerfs -f` to union branch directories into a volume mount for a pod.
+Node-local Kubernetes CSI driver that runs `mergerfs -f` to union branch directories into a volume mount for a pod. Optional lightweight controller copies StorageClass parameters into VolumeContext for dynamic PVCs.
 
 ## Non-goals (v1)
 
-- Controller provisioner / CreateVolume dynamic staging
+- Real disk allocation / capacity enforcement beyond RequiredBytes validation
+- VolumeContentSource (clones/snapshots)
 - Cross-node RWX without shared branches
 - Snapshots / clones
 - meta-fuse-csi integration (documented as future validation only)
@@ -21,6 +22,7 @@ Node-local Kubernetes CSI driver that runs `mergerfs -f` to union branch directo
 - Name: `mergerfs.csi.k8s.io`
 - Language: Go
 - Module: `github.com/local-only/mergerfs-csi` (local; no remote required)
+- Modes: `--mode=node|controller|all` (default `node`)
 
 ## CSI capabilities
 
@@ -30,8 +32,10 @@ Node-local Kubernetes CSI driver that runs `mergerfs -f` to union branch directo
 | NodeGetCapabilities | STAGE_UNSTAGE_VOLUME optional; implement STAGE as no-op or skip |
 | NodePublishVolume | Resolve branches → start mergerfs → mount at target |
 | NodeUnpublishVolume | fusermount/umount target; stop supervised mergerfs |
-| Identity / Probe | Standard healthy probe |
-| Controller | Identity only stub OR omit controller; node-only is enough for static PV |
+| Identity / Probe | Standard healthy probe; advertise CONTROLLER_SERVICE when mode=controller\|all |
+| CreateVolume | Validate capacity; copy `parameters` → Volume.VolumeContext; no disk alloc |
+| DeleteVolume | No-op success |
+| ControllerGetCapabilities | CREATE_DELETE_VOLUME only |
 
 ## Volume context
 
@@ -78,6 +82,7 @@ DaemonSet needs: privileged or `SYS_ADMIN` + `/dev/fuse`, hostPath for kubelet p
 
 - Unit: branch JSON parse, path resolve, option sanitize
 - Unit: mount command builder (no real FUSE required)
+- Unit: CreateVolume copies parameters to VolumeContext
 - Fake FS: tempfile branches + mock runner interface
 - `go test ./...` must pass on Darwin (skip Linux-only mount tests with build tags)
 
@@ -85,13 +90,14 @@ DaemonSet needs: privileged or `SYS_ADMIN` + `/dev/fuse`, hostPath for kubelet p
 
 Chart `charts/mergerfs-csi`:
 
-- DaemonSet node plugin + node-driver-registrar sidecar
+- DaemonSet node plugin + node-driver-registrar sidecar (`--mode=node`)
+- Optional controller Deployment + `csi-provisioner` sidecar (`controller.enabled=true`, `--mode=controller`)
 - CSIDriver object
-- optional example StorageClass / static PV templates under `examples/`
+- optional StorageClass / static PV templates under `examples/`
 
 ## Docs
 
-- README: install, examples, EXDEV / no-subPath warnings
+- README: install, examples, EXDEV / no-subPath warnings, Renovate `MERGEFS_VERSION`
 - `docs/architecture.md`, `docs/volume-layering.md`
 - Track B note: `docs/meta-fuse-validation.md` (not implemented)
 

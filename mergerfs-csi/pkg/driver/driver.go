@@ -19,11 +19,20 @@ import (
 
 const DriverName = "mergerfs.csi.k8s.io"
 
+// Mode selects which CSI services this process exposes.
+type Mode string
+
 const (
-	ctxBranches         = "branches"
-	ctxMergerfsOptions  = "mergerfsOptions"
-	ctxPodUID           = "csi.storage.k8s.io/pod.uid"
-	defaultBranchWait   = 30 * time.Second
+	ModeNode       Mode = "node"
+	ModeController Mode = "controller"
+	ModeAll        Mode = "all"
+)
+
+const (
+	ctxBranches        = "branches"
+	ctxMergerfsOptions = "mergerfsOptions"
+	ctxPodUID          = "csi.storage.k8s.io/pod.uid"
+	defaultBranchWait  = 30 * time.Second
 )
 
 // Config holds driver runtime settings.
@@ -31,6 +40,7 @@ type Config struct {
 	Name            string
 	NodeID          string
 	Endpoint        string
+	Mode            Mode
 	MergerfsPath    string
 	KubeletPodsPath string
 	StateDir        string
@@ -38,9 +48,10 @@ type Config struct {
 	Supervisor      *mergerfs.Supervisor
 }
 
-// Driver is the CSI node plugin.
+// Driver is the CSI node and/or controller plugin.
 type Driver struct {
 	csi.UnimplementedIdentityServer
+	csi.UnimplementedControllerServer
 	csi.UnimplementedNodeServer
 
 	cfg Config
@@ -52,6 +63,14 @@ type Driver struct {
 func New(cfg Config) (*Driver, error) {
 	if cfg.Name == "" {
 		cfg.Name = DriverName
+	}
+	if cfg.Mode == "" {
+		cfg.Mode = ModeNode
+	}
+	switch cfg.Mode {
+	case ModeNode, ModeController, ModeAll:
+	default:
+		return nil, fmt.Errorf("invalid mode %q", cfg.Mode)
 	}
 	if cfg.NodeID == "" {
 		return nil, fmt.Errorf("node-id required")
@@ -101,7 +120,12 @@ func (d *Driver) Run(ctx context.Context) error {
 	}
 	d.srv = grpc.NewServer()
 	csi.RegisterIdentityServer(d.srv, d)
-	csi.RegisterNodeServer(d.srv, d)
+	if d.cfg.Mode == ModeNode || d.cfg.Mode == ModeAll {
+		csi.RegisterNodeServer(d.srv, d)
+	}
+	if d.cfg.Mode == ModeController || d.cfg.Mode == ModeAll {
+		csi.RegisterControllerServer(d.srv, d)
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -145,8 +169,17 @@ func (d *Driver) GetPluginInfo(context.Context, *csi.GetPluginInfoRequest) (*csi
 }
 
 func (d *Driver) GetPluginCapabilities(context.Context, *csi.GetPluginCapabilitiesRequest) (*csi.GetPluginCapabilitiesResponse, error) {
-	// Node-only driver: no controller service.
-	return &csi.GetPluginCapabilitiesResponse{}, nil
+	caps := []*csi.PluginCapability{}
+	if d.controllerEnabled() {
+		caps = append(caps, &csi.PluginCapability{
+			Type: &csi.PluginCapability_Service_{
+				Service: &csi.PluginCapability_Service{
+					Type: csi.PluginCapability_Service_CONTROLLER_SERVICE,
+				},
+			},
+		})
+	}
+	return &csi.GetPluginCapabilitiesResponse{Capabilities: caps}, nil
 }
 
 func (d *Driver) Probe(context.Context, *csi.ProbeRequest) (*csi.ProbeResponse, error) {

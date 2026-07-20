@@ -1,9 +1,9 @@
 # mergerfs-csi
 
-Node-local Kubernetes CSI driver that runs [`mergerfs`](https://github.com/trapexit/mergerfs) (FUSE) to union branch directories into a single volume mount for a pod.
+Node-local Kubernetes CSI driver that runs [`mergerfs`](https://github.com/trapexit/mergerfs) (FUSE) to union branch directories into a single volume mount for a pod. Optional minimal controller for dynamic PVCs (params → VolumeContext).
 
 **Driver name:** `mergerfs.csi.k8s.io`  
-**Status:** Phase 1+2 node driver (in progress). No dynamic provisioner.  
+**Status:** Phase 1–3 implemented (controller minimal).  
 **Platform:** Linux only (FUSE / kubelet host paths).
 
 ## Docs
@@ -11,7 +11,7 @@ Node-local Kubernetes CSI driver that runs [`mergerfs`](https://github.com/trape
 | Doc | Topic |
 |-----|--------|
 | [docs/SPEC.md](docs/SPEC.md) | Spec / scope |
-| [docs/architecture.md](docs/architecture.md) | CSI node design, lifecycle, privileges |
+| [docs/architecture.md](docs/architecture.md) | CSI node + controller design |
 | [docs/volume-layering.md](docs/volume-layering.md) | `pvcRef` / `emptyDirRef`, EXDEV anti-patterns |
 | [docs/meta-fuse-validation.md](docs/meta-fuse-validation.md) | Track B validation (not implemented) |
 | [docs/development.md](docs/development.md) | Build, test, layout |
@@ -21,10 +21,19 @@ Node-local Kubernetes CSI driver that runs [`mergerfs`](https://github.com/trape
 ### Build
 
 ```bash
-cd mergerfs-csi
-make build          # or: go build -o bin/mergerfs-csi ./cmd/mergerfs-csi
-make image          # container image (Linux)
+make build          # bin/mergerfs-csi
+make test           # go test ./...
+make docker-build   # linux/amd64 image (bakes mergerfs from GitHub releases)
 ```
+
+Image always downloads a static mergerfs binary. Version pinned in `Dockerfile`:
+
+```dockerfile
+# renovate: datasource=github-releases depName=trapexit/mergerfs
+ARG MERGEFS_VERSION=2.42.0
+```
+
+Renovate (`renovate.json`) bumps `MERGEFS_VERSION` via regex customManager. Override at build time: `--build-arg MERGEFS_VERSION=...`.
 
 ### Helm install
 
@@ -35,7 +44,16 @@ helm install mergerfs-csi ./charts/mergerfs-csi \
   --set image.tag=<tag>
 ```
 
-Chart deploys a DaemonSet (node plugin + `node-driver-registrar`) and a `CSIDriver` with `podInfoOnMount: true`.
+Chart deploys a DaemonSet (node plugin + `node-driver-registrar`, `--mode=node`) and a `CSIDriver` with `podInfoOnMount: true`.
+
+Optional controller + StorageClass:
+
+```bash
+helm upgrade --install mergerfs-csi ./charts/mergerfs-csi \
+  --namespace kube-system \
+  --set controller.enabled=true \
+  --set storageClass.create=true
+```
 
 ### Example usage
 
@@ -43,7 +61,7 @@ Chart deploys a DaemonSet (node plugin + `node-driver-registrar`) and a `CSIDriv
 2. Mount a mergerfs CSI volume whose `volumeAttributes.branches` JSON references those volumes by name (or host paths).
 3. App uses the mergerfs mount only — do **not** remount branch subdirs separately into the app.
 
-Static PV / example manifests: `examples/` (when present).
+Examples: `examples/static-pv-hostpath.yaml`, `examples/layered-pvc-emptydir.yaml`, `examples/layered-rclone.yaml`.
 
 Volume context sketch:
 
@@ -61,7 +79,7 @@ See [volume layering](docs/volume-layering.md) for full branch types and path ru
 - **EXDEV.** Mount the **pool root** only. No `subPath` into mergerfs. Do not bind-mount branch subdirs as separate volumes into the same container — rename/move across branches fails with `EXDEV`.
 - **PVC-as-branch = kubelet host paths.** Branch resolution uses paths under `/var/lib/kubelet/pods/<uid>/...`, not in-container mount paths.
 - **Linux only.** Unit tests may run on Darwin; real mount tests are Linux/build-tagged.
-- **Node-local.** No cross-node RWX without shared branch storage. No snapshots/clones in v1.
+- **Node-local.** No cross-node RWX without shared branch storage. Controller CreateVolume does not allocate disk — only echoes SC parameters.
 
 ## License
 

@@ -39,6 +39,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --endpoint={{ .Values.driver.endpoint }}
+            - --mode=node
             - --node-id=$(NODE_ID)
             - --kubelet-pods-path={{ .Values.driver.kubeletPodsPath }}
             - --state-dir={{ .Values.driver.stateDir }}

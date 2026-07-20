@@ -1,35 +1,41 @@
 # Architecture
 
-Node-only CSI driver. No controller provisioner in v1. Static PVs (or inline volume attributes) are enough.
+Node CSI driver + optional minimal controller. Static PVs / ephemeral volumes work without controller; enable controller for dynamic PVCs that echo StorageClass params into VolumeContext.
 
 ## Components
 
 ```
-Pod ──► kubelet ──► CSI NodePublish ──► mergerfs-csi (DaemonSet)
+Pod ──► kubelet ──► CSI NodePublish ──► mergerfs-csi (DaemonSet, --mode=node)
                                            │
                                            ├─ resolve branches (hostPath / kubelet vol paths)
                                            ├─ exec mergerfs -f -o <opts> <b0:b1:...> <target>
                                            └─ pidfile /var/lib/mergerfs-csi/<volID>.pid
+
+PVC ──► csi-provisioner ──► CreateVolume ──► mergerfs-csi (Deployment, --mode=controller)
+                                              └─ copy SC parameters → VolumeContext (no disk)
 ```
 
 | Piece | Role |
 |-------|------|
-| DaemonSet node plugin | gRPC CSI Identity + Node services |
+| DaemonSet node plugin | gRPC CSI Identity + Node (`--mode=node`) |
+| Deployment controller | Identity + Controller Create/Delete (`--mode=controller`) |
 | `node-driver-registrar` | Registers driver with kubelet |
-| `mergerfs` binary | FUSE union FS (in image or on host) |
+| `csi-provisioner` | Watches PVCs; calls CreateVolume |
+| `mergerfs` binary | FUSE union FS (baked from GitHub releases) |
 | `CSIDriver` | `mergerfs.csi.k8s.io`, `podInfoOnMount: true` |
 
-Controller RPCs: omit or Identity stub only. Dynamic `CreateVolume` is out of scope.
-
-## CSI RPCs (v1)
+## CSI RPCs
 
 | RPC | Behavior |
 |-----|----------|
-| Identity / Probe | Healthy if process up |
+| Identity / Probe | Healthy if process up; CONTROLLER_SERVICE when mode=controller\|all |
 | NodeGetInfo | Node ID from `NODE_ID` env or hostname |
 | NodeGetCapabilities | STAGE optional; STAGE may be no-op / skipped |
 | NodePublishVolume | Resolve branches → start supervised `mergerfs -f` → mount at target |
 | NodeUnpublishVolume | `fusermount3 -u` / `umount` → kill process → remove pidfile |
+| CreateVolume | Validate capacity; copy `parameters` → VolumeContext |
+| DeleteVolume | No-op |
+| ControllerGetCapabilities | CREATE_DELETE_VOLUME |
 
 Idempotent publish: if target already mounted (`IsMounted`), succeed (best-effort; no source/branch re-check in v1).
 
@@ -75,13 +81,13 @@ DaemonSet typically needs:
 - hostPath to optional fixed branch roots (`hostPath` branches)
 - Bidirectional/propagation as required for FUSE mounts into kubelet targets
 
-Without FUSE capability, `NodePublishVolume` fails. Treat the node plugin as a privileged storage agent.
+Controller Deployment does not need FUSE privileges (no mounts).
 
 ## Non-goals (v1)
 
-- Dynamic provisioning / CreateVolume staging
+- Real capacity / disk allocation (CreateVolume is param echo only)
+- VolumeContentSource / snapshots / clones
 - Cross-node RWX without shared branches
-- Snapshots / clones
 - meta-fuse nesting (see [meta-fuse-validation.md](meta-fuse-validation.md))
 
 ## Related

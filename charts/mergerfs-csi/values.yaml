@@ -37,6 +37,25 @@ sidecar:
     tag: v2.12.0
     pullPolicy: IfNotPresent
 
+# Optional controller (dynamic provisioner). CreateVolume copies SC params → VolumeContext.
+controller:
+  enabled: false
+  replicas: 1
+  nodeSelector: {}
+  tolerations: []
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+  provisioner:
+    image:
+      repository: registry.k8s.io/sig-storage/csi-provisioner
+      tag: v5.1.0
+      pullPolicy: IfNotPresent
+
 resources:
   requests:
     cpu: 10m
@@ -60,14 +79,19 @@ serviceAccount:
 rbac:
   create: true
 
-# Optional StorageClass (static PVs are primary for v1; SC is a stub)
+# Optional StorageClass (enable with controller for dynamic PVC)
 storageClass:
   create: false
   name: mergerfs
   isDefault: false
   reclaimPolicy: Delete
   volumeBindingMode: WaitForFirstConsumer
-  parameters: {}
+  # Example parameters (JSON string for branches — echoed into VolumeContext):
+  #   branches: '[{"type":"hostPath","path":"/data/a"},{"type":"hostPath","path":"/data/b"}]'
+  #   mergerfsOptions: "category.create=mfs,cache.files=partial"
+  parameters:
+    branches: '[{"type":"hostPath","path":"/data/a"},{"type":"hostPath","path":"/data/b"}]'
+    mergerfsOptions: "category.create=mfs,cache.files=partial"
 
 nameOverride: ""
 fullnameOverride: ""
