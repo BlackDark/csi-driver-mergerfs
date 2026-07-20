@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build mergerfs-csi from the Go module at ./mergerfs-csi
-FROM golang:1.24-alpine AS build
+FROM golang:1.26-alpine AS build
 WORKDIR /src
 COPY mergerfs-csi/go.mod mergerfs-csi/go.sum* ./
 RUN go mod download 2>/dev/null || true
@@ -30,11 +30,8 @@ RUN if [ -n "$MERGEFS_URL" ]; then \
 
 COPY --from=build /out/mergerfs-csi /mergerfs-csi
 
-# Non-secret defaults (override via env / Helm)
-ENV CSI_ENDPOINT=unix:///csi/csi.sock \
-    DRIVER_NAME=mergerfs.csi.k8s.io \
-    KUBELET_PODS_PATH=/var/lib/kubelet/pods \
-    STATE_DIR=/var/lib/mergerfs-csi \
-    MERGERFS_BIN=/usr/local/bin/mergerfs
-
+# Binary reads CLI flags only (not ENV). Helm DaemonSet passes:
+#   --endpoint --node-id --kubelet-pods-path --state-dir --mergerfs-path
+# CMD defaults used for bare `docker run` / local smoke; Helm args replace CMD.
 ENTRYPOINT ["/mergerfs-csi"]
+CMD ["--mergerfs-path=/usr/local/bin/mergerfs"]

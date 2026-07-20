@@ -40,25 +40,14 @@ spec:
           args:
             - --endpoint={{ .Values.driver.endpoint }}
             - --node-id=$(NODE_ID)
-            - --driver-name={{ .Values.driver.name }}
             - --kubelet-pods-path={{ .Values.driver.kubeletPodsPath }}
             - --state-dir={{ .Values.driver.stateDir }}
-            - --mergerfs-bin={{ .Values.driver.mergerfsBin }}
+            - --mergerfs-path={{ .Values.driver.mergerfsPath }}
           env:
             - name: NODE_ID
               valueFrom:
                 fieldRef:
                   fieldPath: spec.nodeName
-            - name: DRIVER_NAME
-              value: {{ .Values.driver.name | quote }}
-            - name: CSI_ENDPOINT
-              value: {{ .Values.driver.endpoint | quote }}
-            - name: KUBELET_PODS_PATH
-              value: {{ .Values.driver.kubeletPodsPath | quote }}
-            - name: STATE_DIR
-              value: {{ .Values.driver.stateDir | quote }}
-            - name: MERGERFS_BIN
-              value: {{ .Values.driver.mergerfsBin | quote }}
           securityContext:
             privileged: {{ .Values.privileged }}
             {{- if not .Values.privileged }}

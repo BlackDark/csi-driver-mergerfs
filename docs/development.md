@@ -70,11 +70,15 @@ Manual cluster check:
 
 ## Local run (node plugin)
 
-Typical flags (exact names follow binary `--help`):
+CLI flags (see `cmd/mergerfs-csi/main.go`; no `--driver-name` / `--mergerfs-bin`):
 
-- CSI endpoint (unix socket for kubelet)
+- `--endpoint` (CSI unix socket; default under kubelet plugins path)
+- `--node-id` (or env `NODE_ID` / hostname)
 - `--kubelet-pods-path` (default `/var/lib/kubelet/pods`)
-- Node ID / `NODE_ID`
+- `--state-dir` (default `/var/lib/mergerfs-csi`)
+- `--mergerfs-path` (path to mergerfs binary)
+
+Driver name hardcoded as `mergerfs.csi.k8s.io`. Helm chart sets these flags on the DaemonSet; Dockerfile `CMD` only defaults `--mergerfs-path`.
 
 Needs access to kubelet pods dir and `/dev/fuse` for real publish.
 

@@ -4,12 +4,13 @@ image:
   pullPolicy: IfNotPresent
 
 driver:
+  # Used by CSIDriver resource only (binary hardcodes name; no --driver-name flag)
   name: mergerfs.csi.k8s.io
   # CSI unix socket path inside the plugin container
   endpoint: unix:///csi/csi.sock
   kubeletPodsPath: /var/lib/kubelet/pods
   stateDir: /var/lib/mergerfs-csi
-  mergerfsBin: /usr/local/bin/mergerfs
+  mergerfsPath: /usr/local/bin/mergerfs
 
 # Node plugin security — FUSE mounts need privileged or SYS_ADMIN + /dev/fuse
 privileged: true
