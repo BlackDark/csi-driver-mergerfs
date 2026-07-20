@@ -49,7 +49,7 @@ Branch types:
 | `hostPath` | `path` | absolute host path |
 | `pvcRef` | `volumeName` | kubelet CSI PVC mount under pod |
 | `emptyDirRef` | `volumeName` | kubelet emptyDir path |
-| `csiRef` | `volumeName`, optional `driverHint` | kubelet CSI volume mount |
+| `csiRef` | `volumeName` | kubelet CSI volume mount (`driverHint` reserved, unused in v1) |
 
 Require `podInfoOnMount: true`. Use pod UID from CSI volume context (`csi.storage.k8s.io/pod.uid`).
 
@@ -68,7 +68,7 @@ Configurable via `--kubelet-pods-path` (default `/var/lib/kubelet/pods`).
 2. Track PID per volume ID in memory + pidfile under `/var/lib/mergerfs-csi/<volID>.pid`
 3. `NodeUnpublishVolume`: umount (fusermount3 -u or umount); kill process; remove pidfile
 
-If target already mounted with expected source, treat as idempotent success.
+If target already mounted, treat as idempotent success (mount presence only in v1).
 
 ## Security
 

@@ -31,7 +31,7 @@ Controller RPCs: omit or Identity stub only. Dynamic `CreateVolume` is out of sc
 | NodePublishVolume | Resolve branches → start supervised `mergerfs -f` → mount at target |
 | NodeUnpublishVolume | `fusermount3 -u` / `umount` → kill process → remove pidfile |
 
-Idempotent publish: if target already mounted with expected source, succeed.
+Idempotent publish: if target already mounted (`IsMounted`), succeed (best-effort; no source/branch re-check in v1).
 
 ## Process lifecycle
 
@@ -41,7 +41,7 @@ Idempotent publish: if target already mounted with expected source, succeed.
    mergerfs -f -o <mergerfsOptions> <branch0:branch1:...> <target>
    ```
 
-2. **Track:** in-memory map + pidfile under `/var/lib/mergerfs-csi/<volID>.pid`.
+2. **Track:** pidfile under `/var/lib/mergerfs-csi/<sha256(volID)>.pid` (hashed name).
 
 3. **Unpublish:** unmount target; kill supervised PID; delete pidfile.
 

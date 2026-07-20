@@ -29,12 +29,13 @@ spec:
       image: busybox:1.36
       command: ["sh", "-c", "echo hello > /scratch/x; ls -la /mnt/union; sleep 3600"]
       volumeMounts:
-        # Mount branch volumes so kubelet materializes them before CSI publish.
+        # Branch vols must be mounted somewhere so kubelet NodePublish's them.
+        # Mounting into app is fine; EXDEV risk is multiple *union* subPath mounts, not this.
         - name: src
           mountPath: /src
         - name: scratch
           mountPath: /scratch
-        # Union mount (CSI ephemeral) — last so branches already exist.
+        # Prefer using only /mnt/union for app I/O across branches.
         - name: union
           mountPath: /mnt/union
   volumes:

@@ -1,5 +1,5 @@
 # Static PV using hostPath branches (node-local).
-# Prefere node affinity so the pod lands on a node that has /data/a and /data/b.
+# Prefer node affinity so the pod lands on a node that has /data/a and /data/b.
 ---
 apiVersion: v1
 kind: PersistentVolume

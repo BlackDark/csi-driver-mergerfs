@@ -40,7 +40,7 @@ containers:
 | `hostPath` | `path` | absolute path on node |
 | `pvcRef` | `volumeName` | `.../volumes/kubernetes.io~csi/<volName>/mount` |
 | `emptyDirRef` | `volumeName` | `.../volumes/kubernetes.io~empty-dir/<volName>` |
-| `csiRef` | `volumeName`, optional `driverHint` | CSI kubelet mount for that volume |
+| `csiRef` | `volumeName` | CSI kubelet mount for that volume |
 
 `volumeName` = key under `spec.volumes[]`.name of the **consumer pod**.
 
