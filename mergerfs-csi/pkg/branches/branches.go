@@ -56,8 +56,25 @@ func validate(b Branch) error {
 		if b.VolumeName == "" {
 			return fmt.Errorf("%s requires volumeName", b.Type)
 		}
+		if err := sanitizePathElement(b.VolumeName, "volumeName"); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unknown type %q", b.Type)
+	}
+	return nil
+}
+
+// sanitizePathElement rejects empty, "/", "\", "..", or multi-component names.
+func sanitizePathElement(s, field string) error {
+	if s == "" {
+		return fmt.Errorf("%s empty", field)
+	}
+	if strings.Contains(s, "/") || strings.Contains(s, `\`) || strings.Contains(s, "..") {
+		return fmt.Errorf("%s contains illegal path characters: %q", field, s)
+	}
+	if filepath.Base(s) != s {
+		return fmt.Errorf("%s must be a single path element: %q", field, s)
 	}
 	return nil
 }
@@ -71,18 +88,36 @@ type Resolver struct {
 func (r Resolver) Resolve(b Branch, podUID string) (string, error) {
 	switch b.Type {
 	case TypeHostPath:
-		return filepath.Clean(b.Path), nil
+		p := filepath.Clean(b.Path)
+		if strings.Contains(p, ":") {
+			return "", fmt.Errorf("branch path must not contain ':': %q", p)
+		}
+		return p, nil
 	case TypePVCRef, TypeCSIRef:
-		if podUID == "" {
-			return "", fmt.Errorf("%s requires pod UID", b.Type)
+		if err := sanitizePathElement(podUID, "podUID"); err != nil {
+			return "", fmt.Errorf("%s requires valid pod UID: %w", b.Type, err)
 		}
-		vol := b.VolumeName
-		return filepath.Join(r.KubeletPodsPath, podUID, "volumes", "kubernetes.io~csi", vol, "mount"), nil
+		if err := sanitizePathElement(b.VolumeName, "volumeName"); err != nil {
+			return "", err
+		}
+		p := filepath.Join(r.KubeletPodsPath, podUID, "volumes", "kubernetes.io~csi", b.VolumeName, "mount")
+		if strings.Contains(p, ":") {
+			return "", fmt.Errorf("branch path must not contain ':': %q", p)
+		}
+		return p, nil
 	case TypeEmptyDirRef:
-		if podUID == "" {
-			return "", fmt.Errorf("emptyDirRef requires pod UID")
+		if err := sanitizePathElement(podUID, "podUID"); err != nil {
+			return "", fmt.Errorf("emptyDirRef requires valid pod UID: %w", err)
 		}
-		return filepath.Join(r.KubeletPodsPath, podUID, "volumes", "kubernetes.io~empty-dir", b.VolumeName), nil
+		if err := sanitizePathElement(b.VolumeName, "volumeName"); err != nil {
+			return "", err
+		}
+		// emptyDir has no /mount suffix (unlike csi/pvc).
+		p := filepath.Join(r.KubeletPodsPath, podUID, "volumes", "kubernetes.io~empty-dir", b.VolumeName)
+		if strings.Contains(p, ":") {
+			return "", fmt.Errorf("branch path must not contain ':': %q", p)
+		}
+		return p, nil
 	default:
 		return "", fmt.Errorf("unknown type %q", b.Type)
 	}

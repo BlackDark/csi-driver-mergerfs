@@ -2,13 +2,22 @@ package mergerfs
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
+)
+
+const (
+	settleTimeout = 2 * time.Second
+	settlePoll    = 50 * time.Millisecond
+	settleMin     = 200 * time.Millisecond // non-Linux: brief alive check
 )
 
 // Process is a started mergerfs child.
@@ -16,6 +25,7 @@ type Process interface {
 	PID() int
 	Wait() error
 	Kill() error
+	Alive() bool
 }
 
 // Runner starts mergerfs processes.
@@ -52,14 +62,29 @@ func (p *execProcess) Kill() error {
 	return p.cmd.Process.Kill()
 }
 
+func (p *execProcess) Alive() bool {
+	if p.cmd.ProcessState != nil && p.cmd.ProcessState.Exited() {
+		return false
+	}
+	if p.cmd.Process == nil {
+		return false
+	}
+	err := p.cmd.Process.Signal(syscall.Signal(0))
+	return err == nil
+}
+
 func (r ExecRunner) Start(ctx context.Context, bin string, args []string) (Process, error) {
-	cmd := exec.CommandContext(ctx, bin, args...)
+	// Intentionally ignore request ctx: CommandContext would SIGKILL mergerfs
+	// when the NodePublishVolume RPC returns and cancels ctx.
+	_ = ctx
+	cmd := exec.Command(bin, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start %s: %w", bin, err)
 	}
+	go func() { _ = cmd.Wait() }()
 	return &execProcess{cmd: cmd}, nil
 }
 
@@ -76,6 +101,12 @@ func (ExecUnmounter) Unmount(target string) error {
 		if err := cmd.Run(); err == nil {
 			return nil
 		}
+	}
+	if _, err := os.Stat(target); os.IsNotExist(err) {
+		return nil
+	}
+	if ok, _ := isMountPoint(target); !ok {
+		return nil
 	}
 	return fmt.Errorf("unmount %s: all methods failed", target)
 }
@@ -109,25 +140,29 @@ func (s *Supervisor) pidPath(volumeID string) string {
 	return fmt.Sprintf("%s/%s.pid", s.StateDir, safe)
 }
 
+// sanitizeVolumeID hex-encodes a truncated sha256 of volumeID so path
+// separators cannot escape StateDir. Rejects ".." for defense in depth.
 func sanitizeVolumeID(id string) string {
-	out := make([]byte, 0, len(id))
-	for i := 0; i < len(id); i++ {
-		c := id[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '-', c == '_', c == '.':
-			out = append(out, c)
-		default:
-			out = append(out, '_')
-		}
+	sum := sha256.Sum256([]byte(id))
+	return hex.EncodeToString(sum[:16])
+}
+
+func rejectVolumeID(id string) error {
+	if id == "" {
+		return fmt.Errorf("volumeID empty")
 	}
-	if len(out) == 0 {
-		return "unknown"
+	if strings.Contains(id, "..") {
+		return fmt.Errorf("volumeID contains ..")
 	}
-	return string(out)
+	return nil
 }
 
 // Mount starts mergerfs at target if not already mounted. Idempotent.
+// If already mounted, succeeds without restart (source check is best-effort / not performed).
 func (s *Supervisor) Mount(ctx context.Context, volumeID, target, opts string, branches []string) error {
+	if err := rejectVolumeID(volumeID); err != nil {
+		return err
+	}
 	if err := s.FS.MkdirAll(s.StateDir, 0o755); err != nil {
 		return err
 	}
@@ -153,23 +188,60 @@ func (s *Supervisor) Mount(ctx context.Context, volumeID, target, opts string, b
 		return err
 	}
 
-	if err := writePID(s.pidPath(volumeID), proc.PID()); err != nil {
+	pidFile := s.pidPath(volumeID)
+	if err := writePID(pidFile, proc.PID()); err != nil {
 		_ = proc.Kill()
 		return err
 	}
 
-	// Brief settle so a fast-failing mergerfs surfaces before we return success.
-	select {
-	case <-time.After(200 * time.Millisecond):
-	case <-ctx.Done():
-		_ = proc.Kill()
-		_ = os.Remove(s.pidPath(volumeID))
-		return ctx.Err()
+	if err := s.settle(proc, target, pidFile); err != nil {
+		return err
 	}
 	return nil
 }
 
-// Unmount stops mergerfs for volumeID and unmounts target.
+// settle polls until mergerfs is alive and (on Linux) target is mounted.
+func (s *Supervisor) settle(proc Process, target, pidFile string) error {
+	requireMount := runtime.GOOS == "linux"
+	start := time.Now()
+	deadline := start.Add(settleTimeout)
+
+	for {
+		if !proc.Alive() {
+			_ = os.Remove(pidFile)
+			return fmt.Errorf("mergerfs exited before mount settled")
+		}
+
+		mounted, err := s.FS.IsMounted(target)
+		if err != nil {
+			_ = proc.Kill()
+			_ = os.Remove(pidFile)
+			return fmt.Errorf("check mount: %w", err)
+		}
+		if mounted {
+			return nil
+		}
+
+		elapsed := time.Since(start)
+		if !requireMount && elapsed >= settleMin {
+			// Darwin cannot reliably detect FUSE mounts; alive after brief settle is enough.
+			return nil
+		}
+		if time.Now().After(deadline) {
+			_ = proc.Kill()
+			_ = os.Remove(pidFile)
+			return fmt.Errorf("mergerfs started but %s not mounted", target)
+		}
+
+		select {
+		case <-time.After(settlePoll):
+		}
+	}
+}
+
+// UnmountVolume stops mergerfs for volumeID and unmounts target.
+// Umount errors are returned unless target is not mounted / ENOENT.
+// Kill + pidfile cleanup always attempted.
 func (s *Supervisor) UnmountVolume(volumeID, target string) error {
 	var first error
 	if err := s.Unmount.Unmount(target); err != nil {

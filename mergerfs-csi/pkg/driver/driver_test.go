@@ -2,6 +2,7 @@ package driver
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
@@ -15,9 +16,10 @@ import (
 
 type fakeProc struct{ pid int }
 
-func (p *fakeProc) PID() int   { return p.pid }
+func (p *fakeProc) PID() int    { return p.pid }
 func (p *fakeProc) Wait() error { return nil }
 func (p *fakeProc) Kill() error { return nil }
+func (p *fakeProc) Alive() bool { return true }
 
 type fakeRunner struct {
 	mu    sync.Mutex
@@ -38,9 +40,11 @@ type fakeFS struct {
 func (f *fakeFS) MkdirAll(string, os.FileMode) error { return nil }
 func (f *fakeFS) IsMounted(t string) (bool, error)   { return f.mounted[t], nil }
 
-type fakeUnmount struct{}
+type fakeUnmount struct {
+	err error
+}
 
-func (fakeUnmount) Unmount(string) error { return nil }
+func (u fakeUnmount) Unmount(string) error { return u.err }
 
 func testDriver(t *testing.T, kubelet string, wait time.Duration) (*Driver, *fakeRunner) {
 	t.Helper()
@@ -163,5 +167,34 @@ func TestNodeUnpublish(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestNodeUnpublishSurfacesUnmountError(t *testing.T) {
+	runner := &fakeRunner{}
+	sup := &mergerfs.Supervisor{
+		Bin:      "mergerfs",
+		StateDir: t.TempDir(),
+		Runner:   runner,
+		Unmount:  fakeUnmount{err: fmt.Errorf("umount: device busy")},
+		FS:       &fakeFS{mounted: map[string]bool{}},
+		Kill:     func(int) error { return nil },
+	}
+	d, err := New(Config{
+		NodeID:          "node-1",
+		Endpoint:        "unix:///tmp/test.sock",
+		KubeletPodsPath: "/k",
+		BranchWait:      time.Second,
+		Supervisor:      sup,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = d.NodeUnpublishVolume(context.Background(), &csi.NodeUnpublishVolumeRequest{
+		VolumeId:   "vol-1",
+		TargetPath: "/mnt/x",
+	})
+	if err == nil {
+		t.Fatal("expected unmount error surfaced")
 	}
 }

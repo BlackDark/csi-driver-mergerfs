@@ -64,6 +64,58 @@ func TestResolve(t *testing.T) {
 	}
 }
 
+func TestResolveEmptyDirVsCSI(t *testing.T) {
+	r := Resolver{KubeletPodsPath: "/k"}
+	uid := "u1"
+	ed, err := r.Resolve(Branch{Type: TypeEmptyDirRef, VolumeName: "cache"}, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	csi, err := r.Resolve(Branch{Type: TypeCSIRef, VolumeName: "cache"}, uid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ed != "/k/u1/volumes/kubernetes.io~empty-dir/cache" {
+		t.Fatalf("emptyDirRef want no /mount, got %q", ed)
+	}
+	if csi != "/k/u1/volumes/kubernetes.io~csi/cache/mount" {
+		t.Fatalf("csiRef want /mount, got %q", csi)
+	}
+}
+
+func TestResolveRejectsPathTraversal(t *testing.T) {
+	r := Resolver{KubeletPodsPath: "/var/lib/kubelet/pods"}
+	cases := []struct {
+		name string
+		b    Branch
+		uid  string
+	}{
+		{"vol slash", Branch{Type: TypePVCRef, VolumeName: "a/b"}, "uid"},
+		{"vol dotdot", Branch{Type: TypePVCRef, VolumeName: ".."}, "uid"},
+		{"vol backslash", Branch{Type: TypeEmptyDirRef, VolumeName: `a\b`}, "uid"},
+		{"uid slash", Branch{Type: TypeCSIRef, VolumeName: "v"}, "uid/../x"},
+		{"uid empty", Branch{Type: TypePVCRef, VolumeName: "v"}, ""},
+		{"vol empty via resolve", Branch{Type: TypePVCRef, VolumeName: "ok"}, ""},
+	}
+	for _, tc := range cases {
+		if _, err := r.Resolve(tc.b, tc.uid); err == nil {
+			t.Fatalf("%s: expected reject", tc.name)
+		}
+	}
+	// Parse-time reject for volumeName traversal
+	if _, err := Parse(`[{"type":"pvcRef","volumeName":"../escape"}]`); err == nil {
+		t.Fatal("Parse should reject volumeName with ..")
+	}
+}
+
+func TestResolveRejectsColonInPath(t *testing.T) {
+	r := Resolver{KubeletPodsPath: "/var/lib/kubelet/pods"}
+	_, err := r.Resolve(Branch{Type: TypeHostPath, Path: "/data/a:b"}, "")
+	if err == nil {
+		t.Fatal("expected reject colon in hostPath")
+	}
+}
+
 func TestResolveRequiresPodUID(t *testing.T) {
 	r := Resolver{KubeletPodsPath: "/var/lib/kubelet/pods"}
 	_, err := r.Resolve(Branch{Type: TypePVCRef, VolumeName: "src"}, "")

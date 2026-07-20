@@ -215,9 +215,10 @@ func (d *Driver) NodeUnpublishVolume(ctx context.Context, req *csi.NodeUnpublish
 	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	// Surface umount errors (ExecUnmounter treats not-mounted / ENOENT as nil).
+	// Kill + pidfile cleanup still runs inside UnmountVolume.
 	if err := d.cfg.Supervisor.UnmountVolume(req.GetVolumeId(), target); err != nil {
-		// Idempotent: if not mounted, still succeed after cleanup attempt.
-		_ = err
+		return nil, err
 	}
 	return &csi.NodeUnpublishVolumeResponse{}, nil
 }

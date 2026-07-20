@@ -28,6 +28,11 @@ func BuildArgs(opts string, branches []string, target string) ([]string, error) 
 	if target == "" {
 		return nil, fmt.Errorf("empty target")
 	}
+	for _, b := range branches {
+		if strings.Contains(b, ":") {
+			return nil, fmt.Errorf("branch path must not contain ':': %q", b)
+		}
+	}
 	sanitized, err := SanitizeOptions(opts)
 	if err != nil {
 		return nil, err
