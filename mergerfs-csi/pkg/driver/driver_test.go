@@ -24,12 +24,16 @@ func (p *fakeProc) Alive() bool { return true }
 type fakeRunner struct {
 	mu    sync.Mutex
 	calls int
+	fs    *fakeFS
 }
 
-func (r *fakeRunner) Start(_ context.Context, _ string, _ []string) (mergerfs.Process, error) {
+func (r *fakeRunner) Start(_ context.Context, _ string, args []string) (mergerfs.Process, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls++
+	if r.fs != nil && len(args) > 0 {
+		r.fs.mounted[args[len(args)-1]] = true
+	}
 	return &fakeProc{pid: 42}, nil
 }
 
@@ -48,13 +52,14 @@ func (u fakeUnmount) Unmount(string) error { return u.err }
 
 func testDriver(t *testing.T, kubelet string, wait time.Duration) (*Driver, *fakeRunner) {
 	t.Helper()
-	runner := &fakeRunner{}
+	fs := &fakeFS{mounted: map[string]bool{}}
+	runner := &fakeRunner{fs: fs}
 	sup := &mergerfs.Supervisor{
 		Bin:      "mergerfs",
 		StateDir: t.TempDir(),
 		Runner:   runner,
 		Unmount:  fakeUnmount{},
-		FS:       &fakeFS{mounted: map[string]bool{}},
+		FS:       fs,
 		Kill:     func(int) error { return nil },
 	}
 	d, err := New(Config{

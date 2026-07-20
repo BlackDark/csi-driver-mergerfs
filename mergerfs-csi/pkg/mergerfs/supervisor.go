@@ -194,19 +194,31 @@ func (s *Supervisor) Mount(ctx context.Context, volumeID, target, opts string, b
 		return err
 	}
 
-	if err := s.settle(proc, target, pidFile); err != nil {
+	if err := s.settle(ctx, proc, target, pidFile); err != nil {
 		return err
 	}
 	return nil
 }
 
+func (s *Supervisor) settleCleanup(proc Process, pidFile string) {
+	_ = proc.Kill()
+	_ = os.Remove(pidFile)
+}
+
 // settle polls until mergerfs is alive and (on Linux) target is mounted.
-func (s *Supervisor) settle(proc Process, target, pidFile string) error {
+func (s *Supervisor) settle(ctx context.Context, proc Process, target, pidFile string) error {
 	requireMount := runtime.GOOS == "linux"
 	start := time.Now()
 	deadline := start.Add(settleTimeout)
 
 	for {
+		select {
+		case <-ctx.Done():
+			s.settleCleanup(proc, pidFile)
+			return ctx.Err()
+		default:
+		}
+
 		if !proc.Alive() {
 			_ = os.Remove(pidFile)
 			return fmt.Errorf("mergerfs exited before mount settled")
@@ -214,8 +226,7 @@ func (s *Supervisor) settle(proc Process, target, pidFile string) error {
 
 		mounted, err := s.FS.IsMounted(target)
 		if err != nil {
-			_ = proc.Kill()
-			_ = os.Remove(pidFile)
+			s.settleCleanup(proc, pidFile)
 			return fmt.Errorf("check mount: %w", err)
 		}
 		if mounted {
@@ -228,12 +239,14 @@ func (s *Supervisor) settle(proc Process, target, pidFile string) error {
 			return nil
 		}
 		if time.Now().After(deadline) {
-			_ = proc.Kill()
-			_ = os.Remove(pidFile)
+			s.settleCleanup(proc, pidFile)
 			return fmt.Errorf("mergerfs started but %s not mounted", target)
 		}
 
 		select {
+		case <-ctx.Done():
+			s.settleCleanup(proc, pidFile)
+			return ctx.Err()
 		case <-time.After(settlePoll):
 		}
 	}
@@ -275,6 +288,9 @@ func killPID(pid int) error {
 	p, err := os.FindProcess(pid)
 	if err != nil {
 		return err
+	}
+	if err := p.Signal(syscall.Signal(0)); err != nil {
+		return nil // already gone
 	}
 	return p.Signal(syscall.SIGTERM)
 }

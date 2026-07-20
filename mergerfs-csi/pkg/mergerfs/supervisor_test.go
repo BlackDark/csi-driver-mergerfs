@@ -2,6 +2,7 @@ package mergerfs
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -90,6 +91,7 @@ type fakeRunner struct {
 	calls [][]string
 	next  int
 	proc  *fakeProc // optional shared proc
+	fs    *fakeFS   // if set, mark target mounted after Start
 }
 
 func (r *fakeRunner) Start(_ context.Context, bin string, args []string) (Process, error) {
@@ -97,6 +99,12 @@ func (r *fakeRunner) Start(_ context.Context, bin string, args []string) (Proces
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, append([]string{bin}, args...))
 	r.next++
+	if r.fs != nil && len(args) > 0 {
+		target := args[len(args)-1]
+		r.fs.mu.Lock()
+		r.fs.mounted[target] = true
+		r.fs.mu.Unlock()
+	}
 	if r.proc != nil {
 		return r.proc, nil
 	}
@@ -144,7 +152,7 @@ func TestSupervisorMountIdempotent(t *testing.T) {
 	state := t.TempDir()
 	target := filepath.Join(t.TempDir(), "mnt")
 	fs := newFakeFS()
-	runner := &fakeRunner{}
+	runner := &fakeRunner{fs: fs}
 	s := &Supervisor{
 		Bin:      "mergerfs",
 		StateDir: state,
@@ -170,7 +178,6 @@ func TestSupervisorMountIdempotent(t *testing.T) {
 		t.Fatalf("pid=%d", pid)
 	}
 
-	fs.mounted[target] = true
 	if err := s.Mount(ctx, "vol1", target, "category.create=mfs", []string{"/a", "/b"}); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +195,7 @@ func TestSupervisorUnmount(t *testing.T) {
 	s := &Supervisor{
 		Bin:      "mergerfs",
 		StateDir: state,
-		Runner:   &fakeRunner{},
+		Runner:   &fakeRunner{fs: fs},
 		Unmount:  um,
 		FS:       fs,
 		Kill: func(pid int) error {
@@ -217,14 +224,15 @@ func TestSupervisorUnmount(t *testing.T) {
 func TestSupervisorUnmountSurfacesError(t *testing.T) {
 	state := t.TempDir()
 	target := filepath.Join(t.TempDir(), "mnt")
+	fs := newFakeFS()
 	um := &fakeUnmount{err: fmt.Errorf("umount failed: busy")}
 	var killed []int
 	s := &Supervisor{
 		Bin:      "mergerfs",
 		StateDir: state,
-		Runner:   &fakeRunner{},
+		Runner:   &fakeRunner{fs: fs},
 		Unmount:  um,
-		FS:       newFakeFS(),
+		FS:       fs,
 		Kill: func(pid int) error {
 			killed = append(killed, pid)
 			return nil
@@ -313,5 +321,59 @@ func TestSettleKillsDeadProcess(t *testing.T) {
 	err := s.Mount(context.Background(), "dead", target, "", []string{"/a"})
 	if err == nil {
 		t.Fatal("expected error when process dead")
+	}
+}
+
+func TestSettleProcessDiesDuringSettle(t *testing.T) {
+	state := t.TempDir()
+	target := filepath.Join(t.TempDir(), "mnt")
+	proc := &fakeProc{pid: 99}
+	// No fs on runner → IsMounted stays false; process dies mid-settle.
+	s := &Supervisor{
+		Bin:      "mergerfs",
+		StateDir: state,
+		Runner:   &fakeRunner{proc: proc},
+		Unmount:  &fakeUnmount{},
+		FS:       newFakeFS(),
+	}
+	go func() {
+		time.Sleep(80 * time.Millisecond)
+		_ = proc.Kill()
+	}()
+	err := s.Mount(context.Background(), "dies", target, "", []string{"/a"})
+	if err == nil {
+		t.Fatal("expected error when process dies during settle")
+	}
+}
+
+func TestSettleHonorsCancel(t *testing.T) {
+	state := t.TempDir()
+	target := filepath.Join(t.TempDir(), "mnt")
+	proc := &fakeProc{pid: 77}
+	// Stuck mount: never report mounted; cancel before settleMin/timeout.
+	s := &Supervisor{
+		Bin:      "mergerfs",
+		StateDir: state,
+		Runner:   &fakeRunner{proc: proc},
+		Unmount:  &fakeUnmount{},
+		FS:       newFakeFS(),
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+	}()
+	err := s.Mount(ctx, "cancel", target, "", []string{"/a"})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("want context.Canceled, got %v", err)
+	}
+	proc.mu.Lock()
+	kills := proc.kills
+	proc.mu.Unlock()
+	if kills < 1 {
+		t.Fatal("cancel should kill started process")
+	}
+	if _, err := os.Stat(s.pidPath("cancel")); !os.IsNotExist(err) {
+		t.Fatalf("pidfile should be cleaned: %v", err)
 	}
 }
