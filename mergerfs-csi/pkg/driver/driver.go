@@ -32,6 +32,8 @@ const (
 	ctxBranches        = "branches"
 	ctxMergerfsOptions = "mergerfsOptions"
 	ctxPodUID          = "csi.storage.k8s.io/pod.uid"
+	ctxPodName         = "csi.storage.k8s.io/pod.name"
+	ctxPodNamespace    = "csi.storage.k8s.io/pod.namespace"
 	defaultBranchWait  = 30 * time.Second
 )
 
@@ -46,6 +48,7 @@ type Config struct {
 	StateDir        string
 	BranchWait      time.Duration
 	Supervisor      *mergerfs.Supervisor
+	VolumeDirNamer  branches.VolumeDirNamer // optional; PVC→PV kubelet dir
 }
 
 // Driver is the CSI node and/or controller plugin.
@@ -221,8 +224,13 @@ func (d *Driver) NodePublishVolume(ctx context.Context, req *csi.NodePublishVolu
 	opts := vc[ctxMergerfsOptions]
 	podUID := vc[ctxPodUID]
 
-	resolver := branches.Resolver{KubeletPodsPath: d.cfg.KubeletPodsPath}
-	paths, err := resolver.ResolveAll(bs, podUID)
+	resolver := branches.Resolver{
+		KubeletPodsPath: d.cfg.KubeletPodsPath,
+		PodNamespace:    vc[ctxPodNamespace],
+		PodName:         vc[ctxPodName],
+		DirNamer:        d.cfg.VolumeDirNamer,
+	}
+	paths, err := resolver.ResolveAll(ctx, bs, podUID)
 	if err != nil {
 		return nil, err
 	}

@@ -60,17 +60,17 @@ Requires `podInfoOnMount: true`. Pod UID from CSI context (`csi.storage.k8s.io/p
 Kubelet Linux patterns (default `--kubelet-pods-path=/var/lib/kubelet/pods`):
 
 ```text
-.../pods/<podUID>/volumes/kubernetes.io~csi/<volName>/mount
+.../pods/<podUID>/volumes/kubernetes.io~csi/<pvName-or-ephemeralVolName>/mount
 .../pods/<podUID>/volumes/kubernetes.io~empty-dir/<volName>
 ```
 
 | Branch type | Resolves via |
 |-------------|--------------|
 | `hostPath` | Absolute host path |
-| `pvcRef` / `csiRef` | Kubelet CSI PVC mount path for that pod volume name |
+| `pvcRef` / `csiRef` | Kubelet CSI mount: try pod `volumeName` dir first (ephemeral); else kube API maps PVC → bound PV name (`pvc-…`) as the CSI dir |
 | `emptyDirRef` | Kubelet emptyDir path for that pod volume name |
 
-**Important:** refs use **host** paths under kubelet, never container-local paths. Driver runs on the node and sees the same filesystem namespace as kubelet volume plugins (via privileged/host mounts).
+**Important:** refs use **host** paths under kubelet, never container-local paths. Driver runs on the node and sees the same filesystem namespace as kubelet volume plugins (via privileged/host mounts). Node SA needs get/list on pods, PVCs, and PVs for `pvcRef` resolution.
 
 ## Privilege model
 

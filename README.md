@@ -77,7 +77,7 @@ See [volume layering](docs/volume-layering.md) for full branch types and path ru
 
 - **FUSE privilege.** Node plugin needs privileged (or `SYS_ADMIN` + `/dev/fuse`) and hostPath access to the kubelet pods directory.
 - **EXDEV.** Mount the **pool root** only. No `subPath` into mergerfs. Do not bind-mount branch subdirs as separate volumes into the same container — rename/move across branches fails with `EXDEV`.
-- **PVC-as-branch = kubelet host paths.** Branch resolution uses paths under `/var/lib/kubelet/pods/<uid>/...`, not in-container mount paths.
+- **PVC-as-branch = kubelet host paths.** Branch resolution uses paths under `/var/lib/kubelet/pods/<uid>/...`, not in-container mount paths. `pvcRef` maps pod volume name → bound PV name via the API (`…/kubernetes.io~csi/<pvName>/mount`).
 - **Linux only.** Unit tests may run on Darwin; real mount tests are Linux/build-tagged.
 - **Node-local.** No cross-node RWX without shared branch storage. Controller CreateVolume does not allocate disk — only echoes SC parameters.
 

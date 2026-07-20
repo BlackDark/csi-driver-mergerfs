@@ -1,8 +1,10 @@
 package branches
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 )
@@ -82,10 +84,13 @@ func sanitizePathElement(s, field string) error {
 // Resolver maps branch specs to host paths under kubelet.
 type Resolver struct {
 	KubeletPodsPath string
+	PodNamespace    string
+	PodName         string
+	DirNamer        VolumeDirNamer // optional; PVC→PV dir via kube API
 }
 
 // Resolve returns the absolute host path for a branch given pod UID.
-func (r Resolver) Resolve(b Branch, podUID string) (string, error) {
+func (r Resolver) Resolve(ctx context.Context, b Branch, podUID string) (string, error) {
 	switch b.Type {
 	case TypeHostPath:
 		p := filepath.Clean(b.Path)
@@ -100,7 +105,11 @@ func (r Resolver) Resolve(b Branch, podUID string) (string, error) {
 		if err := sanitizePathElement(b.VolumeName, "volumeName"); err != nil {
 			return "", err
 		}
-		p := filepath.Join(r.KubeletPodsPath, podUID, "volumes", "kubernetes.io~csi", b.VolumeName, "mount")
+		dirName, err := r.csiDirName(ctx, b.VolumeName, podUID)
+		if err != nil {
+			return "", err
+		}
+		p := filepath.Join(r.KubeletPodsPath, podUID, "volumes", "kubernetes.io~csi", dirName, "mount")
 		if strings.Contains(p, ":") {
 			return "", fmt.Errorf("branch path must not contain ':': %q", p)
 		}
@@ -123,11 +132,32 @@ func (r Resolver) Resolve(b Branch, podUID string) (string, error) {
 	}
 }
 
+// csiDirName picks the kubernetes.io~csi/<dir>/ name.
+// Fast path: pod volume name if that mount dir already exists (ephemeral CSI).
+// Else: kube API maps PVC → bound PV name.
+func (r Resolver) csiDirName(ctx context.Context, volumeName, podUID string) (string, error) {
+	direct := filepath.Join(r.KubeletPodsPath, podUID, "volumes", "kubernetes.io~csi", volumeName, "mount")
+	if fi, err := os.Stat(direct); err == nil && fi.IsDir() {
+		return volumeName, nil
+	}
+	if r.DirNamer != nil && r.PodNamespace != "" && r.PodName != "" {
+		name, err := r.DirNamer.CSIVolumeDirName(ctx, r.PodNamespace, r.PodName, volumeName)
+		if err != nil {
+			return "", err
+		}
+		if err := sanitizePathElement(name, "csiDirName"); err != nil {
+			return "", err
+		}
+		return name, nil
+	}
+	return volumeName, nil
+}
+
 // ResolveAll resolves every branch in order.
-func (r Resolver) ResolveAll(bs []Branch, podUID string) ([]string, error) {
+func (r Resolver) ResolveAll(ctx context.Context, bs []Branch, podUID string) ([]string, error) {
 	out := make([]string, 0, len(bs))
 	for i, b := range bs {
-		p, err := r.Resolve(b, podUID)
+		p, err := r.Resolve(ctx, b, podUID)
 		if err != nil {
 			return nil, fmt.Errorf("branches[%d]: %w", i, err)
 		}

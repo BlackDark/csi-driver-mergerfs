@@ -8,6 +8,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
+	"github.com/local-only/mergerfs-csi/pkg/branches"
 	"github.com/local-only/mergerfs-csi/pkg/driver"
 )
 
@@ -38,14 +42,23 @@ func main() {
 		*nodeID = h
 	}
 
-	d, err := driver.NewDefault(driver.Config{
+	cfg := driver.Config{
 		Endpoint:        *endpoint,
 		NodeID:          *nodeID,
 		Mode:            m,
 		MergerfsPath:    *mergerfsPath,
 		KubeletPodsPath: *kubeletPods,
 		StateDir:        *stateDir,
-	})
+	}
+	if m == driver.ModeNode || m == driver.ModeAll {
+		if namer, err := inClusterVolumeDirNamer(); err != nil {
+			fmt.Fprintf(os.Stderr, "warning: kube volume dir resolver unavailable: %v\n", err)
+		} else {
+			cfg.VolumeDirNamer = namer
+		}
+	}
+
+	d, err := driver.NewDefault(cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "driver: %v\n", err)
 		os.Exit(1)
@@ -58,4 +71,16 @@ func main() {
 		fmt.Fprintf(os.Stderr, "run: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+func inClusterVolumeDirNamer() (branches.VolumeDirNamer, error) {
+	restCfg, err := rest.InClusterConfig()
+	if err != nil {
+		return nil, err
+	}
+	client, err := kubernetes.NewForConfig(restCfg)
+	if err != nil {
+		return nil, err
+	}
+	return &branches.KubeVolumeDir{Client: client}, nil
 }

@@ -51,18 +51,20 @@ Branch types:
 | type | fields | resolve to |
 |------|--------|------------|
 | `hostPath` | `path` | absolute host path |
-| `pvcRef` | `volumeName` | kubelet CSI PVC mount under pod |
+| `pvcRef` | `volumeName` | kubelet CSI mount: PVC → PV name via API (`…/kubernetes.io~csi/<pvName>/mount`); ephemeral CSI uses pod volume name |
 | `emptyDirRef` | `volumeName` | kubelet emptyDir path |
 | `csiRef` | `volumeName` | kubelet CSI volume mount (`driverHint` reserved, unused in v1) |
 
-Require `podInfoOnMount: true`. Use pod UID from CSI volume context (`csi.storage.k8s.io/pod.uid`).
+Require `podInfoOnMount: true`. Use pod UID / name / namespace from CSI volume context (`csi.storage.k8s.io/pod.*`).
 
 Kubelet path patterns (Linux):
 
 ```
-/var/lib/kubelet/pods/<podUID>/volumes/kubernetes.io~csi/<volName>/mount
+/var/lib/kubelet/pods/<podUID>/volumes/kubernetes.io~csi/<pvName-or-ephemeralVolName>/mount
 /var/lib/kubelet/pods/<podUID>/volumes/kubernetes.io~empty-dir/<volName>
 ```
+
+For `pvcRef`, the CSI directory is the **bound PV name** (e.g. `pvc-edd9e34a-…`), not the pod volume name. The node plugin resolves Pod → PVC → `pvc.Spec.VolumeName` via the API (fast path: if `…/csi/<volumeName>/mount` already exists, use that — typical for ephemeral CSI).
 
 Configurable via `--kubelet-pods-path` (default `/var/lib/kubelet/pods`).
 

@@ -38,7 +38,7 @@ containers:
 | type | fields | host resolve |
 |------|--------|----------------|
 | `hostPath` | `path` | absolute path on node |
-| `pvcRef` | `volumeName` | `.../volumes/kubernetes.io~csi/<volName>/mount` |
+| `pvcRef` | `volumeName` | `…/kubernetes.io~csi/<pvName>/mount` — API maps pod volume → PVC → bound PV name; ephemeral CSI keeps pod volume name |
 | `emptyDirRef` | `volumeName` | `.../volumes/kubernetes.io~empty-dir/<volName>` |
 | `csiRef` | `volumeName` | CSI kubelet mount for that volume |
 
@@ -47,6 +47,8 @@ containers:
 ### Path rule
 
 PVC-as-branch works **only** via kubelet host paths. The driver does not look inside the app container’s mount namespace for branch roots.
+
+For PVC volumes, kubelet names the CSI dir after the **PV** (`pvc-…`), not the pod volume name. Node plugin uses the kube API (Pod → PVC → `VolumeName`) to map; ephemeral CSI volumes still use the pod volume name as the dir.
 
 Default base: `/var/lib/kubelet/pods/<podUID>/volumes/...`  
 Override: `--kubelet-pods-path`.

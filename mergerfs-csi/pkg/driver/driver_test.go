@@ -10,7 +10,11 @@ import (
 	"time"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
 
+	"github.com/local-only/mergerfs-csi/pkg/branches"
 	"github.com/local-only/mergerfs-csi/pkg/mergerfs"
 )
 
@@ -118,6 +122,7 @@ func TestNodePublishHostPath(t *testing.T) {
 func TestNodePublishPVCRef(t *testing.T) {
 	kubelet := t.TempDir()
 	uid := "pod-uid"
+	// Fast path: ephemeral-style dir named after pod volume.
 	volPath := filepath.Join(kubelet, uid, "volumes", "kubernetes.io~csi", "src", "mount")
 	if err := os.MkdirAll(volPath, 0o755); err != nil {
 		t.Fatal(err)
@@ -131,9 +136,65 @@ func TestNodePublishPVCRef(t *testing.T) {
 		VolumeId:   "vol-2",
 		TargetPath: target,
 		VolumeContext: map[string]string{
-			"branches":                 `[{"type":"hostPath","path":"` + host + `"},{"type":"pvcRef","volumeName":"src"}]`,
-			"csi.storage.k8s.io/pod.uid": uid,
-			"mergerfsOptions":          "category.create=mfs",
+			"branches":                   `[{"type":"hostPath","path":"` + host + `"},{"type":"pvcRef","volumeName":"src"}]`,
+			"csi.storage.k8s.io/pod.uid":  uid,
+			"csi.storage.k8s.io/pod.name": "app",
+			"csi.storage.k8s.io/pod.namespace": "ns",
+			"mergerfsOptions":            "category.create=mfs",
+		},
+		VolumeCapability: &csi.VolumeCapability{
+			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},
+			AccessMode: &csi.VolumeCapability_AccessMode{Mode: csi.VolumeCapability_AccessMode_SINGLE_NODE_WRITER},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.calls != 1 {
+		t.Fatalf("calls=%d", runner.calls)
+	}
+}
+
+func TestNodePublishPVCRefViaKubePVName(t *testing.T) {
+	kubelet := t.TempDir()
+	uid := "pod-uid"
+	pvName := "pvc-edd9e34a-5dfd-48c9-9d60-00ff9c9853b2"
+	volPath := filepath.Join(kubelet, uid, "volumes", "kubernetes.io~csi", pvName, "mount")
+	if err := os.MkdirAll(volPath, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	host := t.TempDir()
+
+	client := fake.NewSimpleClientset(
+		&corev1.Pod{
+			ObjectMeta: metav1.ObjectMeta{Name: "app", Namespace: "ns"},
+			Spec: corev1.PodSpec{
+				Volumes: []corev1.Volume{{
+					Name: "remote",
+					VolumeSource: corev1.VolumeSource{
+						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{ClaimName: "data"},
+					},
+				}},
+			},
+		},
+		&corev1.PersistentVolumeClaim{
+			ObjectMeta: metav1.ObjectMeta{Name: "data", Namespace: "ns"},
+			Spec:       corev1.PersistentVolumeClaimSpec{VolumeName: pvName},
+		},
+	)
+
+	d, runner := testDriver(t, kubelet, time.Second)
+	d.cfg.VolumeDirNamer = &branches.KubeVolumeDir{Client: client}
+	target := filepath.Join(t.TempDir(), "tgt")
+
+	_, err := d.NodePublishVolume(context.Background(), &csi.NodePublishVolumeRequest{
+		VolumeId:   "vol-pv",
+		TargetPath: target,
+		VolumeContext: map[string]string{
+			"branches":                        `[{"type":"hostPath","path":"` + host + `"},{"type":"pvcRef","volumeName":"remote"}]`,
+			"csi.storage.k8s.io/pod.uid":       uid,
+			"csi.storage.k8s.io/pod.name":      "app",
+			"csi.storage.k8s.io/pod.namespace": "ns",
 		},
 		VolumeCapability: &csi.VolumeCapability{
 			AccessType: &csi.VolumeCapability_Mount{Mount: &csi.VolumeCapability_MountVolume{}},

@@ -1,12 +1,21 @@
 {{- if .Values.rbac.create }}
-# Minimal RBAC for csi-node-driver-registrar (gets nodes via downward API; SA still required).
+# Node plugin: resolve pvcRef via Pod → PVC → PV (kubelet CSI dir = PV name).
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ include "mergerfs-csi.fullname" . }}
   labels:
     {{- include "mergerfs-csi.labels" . | nindent 4 }}
-rules: []
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

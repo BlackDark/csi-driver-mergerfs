@@ -43,6 +43,7 @@ func TestParseRejects(t *testing.T) {
 func TestResolve(t *testing.T) {
 	r := Resolver{KubeletPodsPath: "/var/lib/kubelet/pods"}
 	uid := "pod-uid-1"
+	ctx := t.Context()
 
 	cases := []struct {
 		b    Branch
@@ -54,7 +55,7 @@ func TestResolve(t *testing.T) {
 		{Branch{Type: TypeEmptyDirRef, VolumeName: "cache"}, "/var/lib/kubelet/pods/pod-uid-1/volumes/kubernetes.io~empty-dir/cache"},
 	}
 	for _, tc := range cases {
-		got, err := r.Resolve(tc.b, uid)
+		got, err := r.Resolve(ctx, tc.b, uid)
 		if err != nil {
 			t.Fatalf("%+v: %v", tc.b, err)
 		}
@@ -67,11 +68,12 @@ func TestResolve(t *testing.T) {
 func TestResolveEmptyDirVsCSI(t *testing.T) {
 	r := Resolver{KubeletPodsPath: "/k"}
 	uid := "u1"
-	ed, err := r.Resolve(Branch{Type: TypeEmptyDirRef, VolumeName: "cache"}, uid)
+	ctx := t.Context()
+	ed, err := r.Resolve(ctx, Branch{Type: TypeEmptyDirRef, VolumeName: "cache"}, uid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	csi, err := r.Resolve(Branch{Type: TypeCSIRef, VolumeName: "cache"}, uid)
+	csi, err := r.Resolve(ctx, Branch{Type: TypeCSIRef, VolumeName: "cache"}, uid)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,6 +87,7 @@ func TestResolveEmptyDirVsCSI(t *testing.T) {
 
 func TestResolveRejectsPathTraversal(t *testing.T) {
 	r := Resolver{KubeletPodsPath: "/var/lib/kubelet/pods"}
+	ctx := t.Context()
 	cases := []struct {
 		name string
 		b    Branch
@@ -98,7 +101,7 @@ func TestResolveRejectsPathTraversal(t *testing.T) {
 		{"vol empty via resolve", Branch{Type: TypePVCRef, VolumeName: "ok"}, ""},
 	}
 	for _, tc := range cases {
-		if _, err := r.Resolve(tc.b, tc.uid); err == nil {
+		if _, err := r.Resolve(ctx, tc.b, tc.uid); err == nil {
 			t.Fatalf("%s: expected reject", tc.name)
 		}
 	}
@@ -110,7 +113,7 @@ func TestResolveRejectsPathTraversal(t *testing.T) {
 
 func TestResolveRejectsColonInPath(t *testing.T) {
 	r := Resolver{KubeletPodsPath: "/var/lib/kubelet/pods"}
-	_, err := r.Resolve(Branch{Type: TypeHostPath, Path: "/data/a:b"}, "")
+	_, err := r.Resolve(t.Context(), Branch{Type: TypeHostPath, Path: "/data/a:b"}, "")
 	if err == nil {
 		t.Fatal("expected reject colon in hostPath")
 	}
@@ -118,7 +121,7 @@ func TestResolveRejectsColonInPath(t *testing.T) {
 
 func TestResolveRequiresPodUID(t *testing.T) {
 	r := Resolver{KubeletPodsPath: "/var/lib/kubelet/pods"}
-	_, err := r.Resolve(Branch{Type: TypePVCRef, VolumeName: "src"}, "")
+	_, err := r.Resolve(t.Context(), Branch{Type: TypePVCRef, VolumeName: "src"}, "")
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -130,7 +133,7 @@ func TestResolveAll(t *testing.T) {
 		{Type: TypeHostPath, Path: "/a"},
 		{Type: TypeEmptyDirRef, VolumeName: "e"},
 	}
-	got, err := r.ResolveAll(bs, "uid")
+	got, err := r.ResolveAll(t.Context(), bs, "uid")
 	if err != nil {
 		t.Fatal(err)
 	}
