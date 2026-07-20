@@ -1,12 +1,10 @@
 # Layered volume: rclone CSI PVC + emptyDir as mergerfs branches.
 #
-# Pattern:
-#   - PVC from an rclone CSI driver (placeholder name below) provides remote/cache data
-#   - emptyDir provides local scratch
-#   - mergerfs CSI ephemeral volume unions them via pvcRef + emptyDirRef
+# pvcRef volumeName = Pod volume name (not PVC claim name).
+# Driver maps Pod volume → PVC → PV name → kubelet path
+#   /var/lib/kubelet/pods/<uid>/volumes/kubernetes.io~csi/<pvName>/mount
 #
-# Replace `rclone.csi.veloxpack.io` / StorageClass with your real rclone CSI install.
-# ORDERING: rclone PVC + emptyDir must publish before mergerfs resolves refs.
+# Replace StorageClass/driver with your rclone CSI install if different.
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

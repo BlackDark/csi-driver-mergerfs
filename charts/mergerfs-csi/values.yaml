@@ -3,6 +3,9 @@ image:
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 
+# Optional pull secrets (e.g. private ghcr.io)
+imagePullSecrets: []
+
 driver:
   # Used by CSIDriver resource only (binary hardcodes name; no --driver-name flag)
   name: mergerfs.csi.k8s.io

@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: mergerfs-csi/go.mod
+          cache-dependency-path: mergerfs-csi/go.sum
+      - name: Test
+        run: make test
+      - name: Build
+        run: make build
+      - name: Helm lint
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
+          make helm-lint
