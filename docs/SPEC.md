@@ -2,6 +2,7 @@
 
 **Date:** 2026-07-20  
 **Scope:** Track A Phase 1 + Phase 2 (node driver, hostPath + pod volume refs). No dynamic provisioner yet.  
+**Status:** Implemented: Phase 1+2 node driver (in progress)  
 **Plan source:** Obsidian `plans/2026-07-12-mergerfs-csi-k8s`
 
 ## Goal
