@@ -1,0 +1,25 @@
+{{- if .Values.rbac.create }}
+# Minimal RBAC for csi-node-driver-registrar (gets nodes via downward API; SA still required).
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "mergerfs-csi.fullname" . }}
+  labels:
+    {{- include "mergerfs-csi.labels" . | nindent 4 }}
+rules: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "mergerfs-csi.fullname" . }}
+  labels:
+    {{- include "mergerfs-csi.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "mergerfs-csi.fullname" . }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "mergerfs-csi.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

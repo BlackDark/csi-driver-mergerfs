@@ -1,0 +1,72 @@
+image:
+  repository: mergerfs-csi
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+driver:
+  name: mergerfs.csi.k8s.io
+  # CSI unix socket path inside the plugin container
+  endpoint: unix:///csi/csi.sock
+  kubeletPodsPath: /var/lib/kubelet/pods
+  stateDir: /var/lib/mergerfs-csi
+  mergerfsBin: /usr/local/bin/mergerfs
+
+# Node plugin security — FUSE mounts need privileged or SYS_ADMIN + /dev/fuse
+privileged: true
+# When privileged=false, chart adds SYS_ADMIN + /dev/fuse device
+extraCapabilities: []
+
+fuseDevice:
+  enabled: true
+  path: /dev/fuse
+
+# Host paths mounted into the DaemonSet
+hostPaths:
+  kubeletPods: /var/lib/kubelet/pods
+  stateDir: /var/lib/mergerfs-csi
+  # CSI plugin registration (kubelet)
+  pluginDir: /var/lib/kubelet/plugins/mergerfs.csi.k8s.io
+  registrationDir: /var/lib/kubelet/plugins_registry
+  # Bidirectional mount of pods dir parent plugins path for volume publish targets
+  kubeletDir: /var/lib/kubelet
+
+sidecar:
+  image:
+    repository: registry.k8s.io/sig-storage/csi-node-driver-registrar
+    tag: v2.12.0
+    pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    cpu: 500m
+    memory: 256Mi
+
+nodeSelector: {}
+
+tolerations:
+  - operator: Exists
+
+affinity: {}
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  create: true
+
+# Optional StorageClass (static PVs are primary for v1; SC is a stub)
+storageClass:
+  create: false
+  name: mergerfs
+  isDefault: false
+  reclaimPolicy: Delete
+  volumeBindingMode: WaitForFirstConsumer
+  parameters: {}
+
+nameOverride: ""
+fullnameOverride: ""

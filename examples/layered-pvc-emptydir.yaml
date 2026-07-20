@@ -1,0 +1,53 @@
+# Layered volume: PVC + emptyDir as mergerfs branches via CSI ephemeral volume.
+#
+# ORDERING (critical):
+#   1. Sidecar / app volumes (pvc "src", emptyDir "scratch") must be mounted first
+#      so kubelet creates paths under /var/lib/kubelet/pods/<uid>/volumes/...
+#   2. CSI ephemeral volume then resolves pvcRef/emptyDirRef by volumeName.
+#
+# volumeName in branches JSON = the Pod volume *name* (not PVC claim name).
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: layer-src-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  # Use any in-cluster StorageClass that binds locally, or a hostPath PV.
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mergerfs-layered-demo
+spec:
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c", "echo hello > /scratch/x; ls -la /mnt/union; sleep 3600"]
+      volumeMounts:
+        # Mount branch volumes so kubelet materializes them before CSI publish.
+        - name: src
+          mountPath: /src
+        - name: scratch
+          mountPath: /scratch
+        # Union mount (CSI ephemeral) — last so branches already exist.
+        - name: union
+          mountPath: /mnt/union
+  volumes:
+    - name: src
+      persistentVolumeClaim:
+        claimName: layer-src-pvc
+    - name: scratch
+      emptyDir: {}
+    # CSI ephemeral: no PVC; volumeAttributes carry branch refs.
+    - name: union
+      csi:
+        driver: mergerfs.csi.k8s.io
+        volumeAttributes:
+          # volumeName must match Pod volume names above (src, scratch).
+          branches: '[{"type":"pvcRef","volumeName":"src"},{"type":"emptyDirRef","volumeName":"scratch"}]'
+          mergerfsOptions: "category.create=mfs,cache.files=partial"
