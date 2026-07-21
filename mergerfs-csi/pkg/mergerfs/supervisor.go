@@ -152,7 +152,7 @@ func rejectVolumeID(id string) error {
 		return fmt.Errorf("volumeID empty")
 	}
 	if strings.Contains(id, "..") {
-		return fmt.Errorf("volumeID contains ..")
+		return fmt.Errorf("volumeID must not contain parent path segments")
 	}
 	return nil
 }

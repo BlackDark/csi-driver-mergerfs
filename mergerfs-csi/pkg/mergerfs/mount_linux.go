@@ -14,7 +14,7 @@ func isMountPoint(target string) (bool, error) {
 		// Fall back: treat as not mounted if we can't check.
 		return false, nil
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
 		fields := strings.Split(sc.Text(), " ")
