@@ -1,0 +1,81 @@
+# Track B — basic mergerfs via meta-fuse fusermount3-proxy (2 emptyDir branches)
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mfcp-validation
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mergerfs-mfcp-basic
+  namespace: mfcp-validation
+spec:
+  hostUsers: true
+  terminationGracePeriodSeconds: 15
+  initContainers:
+    - name: mergerfs-starter
+      restartPolicy: Always
+      image: ghcr.io/blackdark/mergerfs-mfcp:0.1.0-test3
+      imagePullPolicy: Never
+      env:
+        - name: FUSERMOUNT3PROXY_FDPASSING_SOCKPATH
+          value: /fusermount3-proxy/fuse-csi-ephemeral.sock
+      command: ["/entrypoint.sh"]
+      args:
+        - mergerfs
+        - -f
+        - -o
+        - category.create=mfs
+        - /branches/a:/branches/b
+        - /tmp
+      volumeMounts:
+        - name: fuse-fd-passing
+          mountPath: /fusermount3-proxy
+        - name: fuse-csi-ephemeral
+          mountPath: /data
+          mountPropagation: HostToContainer
+        - name: branch-a
+          mountPath: /branches/a
+        - name: branch-b
+          mountPath: /branches/b
+      securityContext:
+        privileged: false
+      startupProbe:
+        exec:
+          command: ["sh", "-c", "mount | grep /data | grep fuse"]
+        failureThreshold: 120
+        periodSeconds: 1
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -e
+          echo a > /data/a.txt
+          echo b > /data/b.txt
+          ls -la /data
+          cat /data/a.txt /data/b.txt
+          echo MFCP_BASIC_OK
+          sleep 30
+      volumeMounts:
+        - name: fuse-csi-ephemeral
+          mountPath: /data
+          mountPropagation: HostToContainer
+      securityContext:
+        privileged: false
+        runAsUser: 0
+  volumes:
+    - name: fuse-fd-passing
+      emptyDir: {}
+    - name: branch-a
+      emptyDir: {}
+    - name: branch-b
+      emptyDir: {}
+    - name: fuse-csi-ephemeral
+      csi:
+        driver: meta-fuse-csi-plugin.csi.storage.pfn.io
+        readOnly: false
+        volumeAttributes:
+          fdPassingEmptyDirName: fuse-fd-passing
+          fdPassingSocketName: fuse-csi-ephemeral.sock

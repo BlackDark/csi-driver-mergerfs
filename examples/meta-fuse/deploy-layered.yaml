@@ -1,0 +1,90 @@
+# Track B — mergerfs + PVC branch (in-pod paths; no kubelet PVC→PV resolver)
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mergerfs-mfcp-layered
+  namespace: mfcp-validation
+spec:
+  hostUsers: true
+  terminationGracePeriodSeconds: 15
+  initContainers:
+    - name: mergerfs-starter
+      restartPolicy: Always
+      image: ghcr.io/blackdark/mergerfs-mfcp:0.1.0-test3
+      imagePullPolicy: Never
+      env:
+        - name: FUSERMOUNT3PROXY_FDPASSING_SOCKPATH
+          value: /fusermount3-proxy/fuse-csi-ephemeral.sock
+      command: ["/entrypoint.sh"]
+      args:
+        - mergerfs
+        - -f
+        - -o
+        - category.create=mfs
+        - /branches/remote:/branches/scratch
+        - /tmp
+      volumeMounts:
+        - name: fuse-fd-passing
+          mountPath: /fusermount3-proxy
+        - name: fuse-csi-ephemeral
+          mountPath: /data
+          mountPropagation: HostToContainer
+        - name: remote
+          mountPath: /branches/remote
+        - name: scratch
+          mountPath: /branches/scratch
+      securityContext:
+        privileged: false
+      startupProbe:
+        exec:
+          command: ["sh", "-c", "mount | grep /data | grep fuse"]
+        failureThreshold: 120
+        periodSeconds: 1
+  containers:
+    - name: app
+      image: busybox:1.36
+      command: ["sh", "-c"]
+      args:
+        - |
+          set -e
+          echo remote > /branches/remote/r.txt
+          echo local > /branches/scratch/s.txt
+          ls -la /data
+          cat /data/r.txt /data/s.txt
+          echo MFCP_LAYERED_OK
+          sleep 30
+      volumeMounts:
+        - name: fuse-csi-ephemeral
+          mountPath: /data
+          mountPropagation: HostToContainer
+        - name: remote
+          mountPath: /branches/remote
+        - name: scratch
+          mountPath: /branches/scratch
+  volumes:
+    - name: fuse-fd-passing
+      emptyDir: {}
+    - name: remote
+      persistentVolumeClaim:
+        claimName: mfcp-branch-pvc
+    - name: scratch
+      emptyDir: {}
+    - name: fuse-csi-ephemeral
+      csi:
+        driver: meta-fuse-csi-plugin.csi.storage.pfn.io
+        readOnly: false
+        volumeAttributes:
+          fdPassingEmptyDirName: fuse-fd-passing
+          fdPassingSocketName: fuse-csi-ephemeral.sock
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mfcp-branch-pvc
+  namespace: mfcp-validation
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: openebs-hostpath
+  resources:
+    requests:
+      storage: 64Mi
