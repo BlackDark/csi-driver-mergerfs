@@ -57,7 +57,13 @@ jobs:
             --version "${ver}" \
             --app-version "${ver}"
 
-      - uses: softprops/action-gh-release@72f2c25fcb47643c292f7107632f7a47c1df5cd8 # v2.3.2
-        with:
-          files: mergerfs-csi-*.tgz
-          generate_release_notes: true
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          ver="${VERSION#v}"
+          gh release create "${VERSION}" \
+            --title "v${ver}" \
+            --generate-notes \
+            mergerfs-csi-"${ver}".tgz
