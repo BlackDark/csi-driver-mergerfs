@@ -21,7 +21,7 @@ Node-local Kubernetes CSI driver that runs `mergerfs -f` to union branch directo
 
 - Name: `mergerfs.csi.k8s.io`
 - Language: Go
-- Module: `github.com/local-only/mergerfs-csi` (local; no remote required)
+- Module: `github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi`
 - Modes: `--mode=node|controller|all` (default `node`)
 
 ## CSI capabilities

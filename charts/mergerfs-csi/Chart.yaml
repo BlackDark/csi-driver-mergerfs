@@ -9,7 +9,7 @@ keywords:
   - mergerfs
   - fuse
   - storage
-home: https://github.com/local-only/mergerfs-csi
+home: https://github.com/BlackDark/csi-driver-mergerfs
 maintainers:
-  - name: local
-    email: local@example.com
+  - name: BlackDark
+    url: https://github.com/BlackDark

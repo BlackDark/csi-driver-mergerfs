@@ -3,7 +3,7 @@
 ## Layout
 
 ```text
-local-only/
+csi-driver-mergerfs/
 ├── README.md
 ├── LICENSE
 ├── docs/
@@ -17,7 +17,7 @@ local-only/
 ├── Dockerfile               # bakes mergerfs from GitHub releases (Renovate-tracked)
 ├── renovate.json
 └── mergerfs-csi/            # Go module
-    ├── go.mod               # github.com/local-only/mergerfs-csi
+    ├── go.mod               # github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi
     ├── cmd/mergerfs-csi/
     └── pkg/
         ├── branches/        # JSON parse, path resolve

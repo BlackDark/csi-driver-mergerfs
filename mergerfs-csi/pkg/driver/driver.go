@@ -13,8 +13,8 @@ import (
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc"
 
-	"github.com/local-only/mergerfs-csi/pkg/branches"
-	"github.com/local-only/mergerfs-csi/pkg/mergerfs"
+	"github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi/pkg/branches"
+	"github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi/pkg/mergerfs"
 )
 
 const DriverName = "mergerfs.csi.k8s.io"

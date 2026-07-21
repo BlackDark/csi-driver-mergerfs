@@ -1,5 +1,5 @@
 image:
-  repository: mergerfs-csi
+  repository: ghcr.io/blackdark/csi-driver-mergerfs
   tag: "0.1.0"
   pullPolicy: IfNotPresent
 

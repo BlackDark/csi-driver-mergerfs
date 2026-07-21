@@ -11,8 +11,8 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
-	"github.com/local-only/mergerfs-csi/pkg/branches"
-	"github.com/local-only/mergerfs-csi/pkg/driver"
+	"github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi/pkg/branches"
+	"github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi/pkg/driver"
 )
 
 func main() {

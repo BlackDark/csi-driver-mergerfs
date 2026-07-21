@@ -14,8 +14,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes/fake"
 
-	"github.com/local-only/mergerfs-csi/pkg/branches"
-	"github.com/local-only/mergerfs-csi/pkg/mergerfs"
+	"github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi/pkg/branches"
+	"github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi/pkg/mergerfs"
 )
 
 type fakeProc struct{ pid int }

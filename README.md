@@ -13,7 +13,7 @@ Node-local Kubernetes CSI driver that runs [`mergerfs`](https://github.com/trape
 | [docs/SPEC.md](docs/SPEC.md) | Spec / scope |
 | [docs/architecture.md](docs/architecture.md) | CSI node + controller design |
 | [docs/volume-layering.md](docs/volume-layering.md) | `pvcRef` / `emptyDirRef`, EXDEV anti-patterns |
-| [docs/meta-fuse-validation.md](docs/meta-fuse-validation.md) | Track B validation (not implemented) |
+| [docs/meta-fuse-validation.md](docs/meta-fuse-validation.md) | Track B meta-fuse validation (failed on lab cluster) |
 | [docs/development.md](docs/development.md) | Build, test, layout |
 
 ## Quickstart

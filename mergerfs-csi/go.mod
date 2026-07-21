@@ -1,4 +1,4 @@
-module github.com/local-only/mergerfs-csi
+module github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi
 
 go 1.26.5
 
