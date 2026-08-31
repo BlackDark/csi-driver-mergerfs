@@ -1,4 +1,4 @@
-IMAGE ?= ghcr.io/blackdark/csi-driver-mergerfs:0.1.0
+IMAGE ?= ghcr.io/blackdark/csi-driver-mergerfs:0.1.1
 GO_MOD_DIR := mergerfs-csi
 CHART := charts/mergerfs-csi
 
