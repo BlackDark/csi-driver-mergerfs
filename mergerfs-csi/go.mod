@@ -1,6 +1,6 @@
 module github.com/BlackDark/csi-driver-mergerfs/mergerfs-csi
 
-go 1.26.5
+go 1.27.0
 
 require (
 	github.com/container-storage-interface/spec v1.11.0

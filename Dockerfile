@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # Build mergerfs-csi from the Go module at ./mergerfs-csi
-FROM golang:1.26-alpine AS build
+FROM golang:1.27-alpine AS build
 WORKDIR /src
 COPY mergerfs-csi/go.mod mergerfs-csi/go.sum* ./
 RUN go mod download 2>/dev/null || true

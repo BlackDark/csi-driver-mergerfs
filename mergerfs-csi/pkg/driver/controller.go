@@ -3,6 +3,7 @@ package driver
 import (
 	"context"
 	"fmt"
+	"maps"
 
 	"github.com/container-storage-interface/spec/lib/go/csi"
 	"google.golang.org/grpc/codes"
@@ -37,9 +38,7 @@ func (d *Driver) CreateVolume(_ context.Context, req *csi.CreateVolumeRequest) (
 	}
 
 	volCtx := map[string]string{}
-	for k, v := range req.GetParameters() {
-		volCtx[k] = v
-	}
+	maps.Copy(volCtx, req.GetParameters())
 
 	return &csi.CreateVolumeResponse{
 		Volume: &csi.Volume{
