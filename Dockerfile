@@ -9,7 +9,7 @@ COPY mergerfs-csi/ ./
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/mergerfs-csi ./cmd/mergerfs-csi
 
 # Runtime: alpine + fuse3 + mergerfs static binary from GitHub releases.
-FROM alpine:3.21
+FROM alpine:3.24
 RUN apk add --no-cache ca-certificates fuse3 curl \
     && mkdir -p /var/lib/mergerfs-csi
 
