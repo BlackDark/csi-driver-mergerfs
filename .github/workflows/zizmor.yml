@@ -1,6 +1,7 @@
 name: zizmor
 
 on:
+  workflow_call:
   pull_request:
     paths: [.github/**]
   push:

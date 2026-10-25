@@ -44,3 +44,17 @@ jobs:
         with:
           version: latest
           working-directory: mergerfs-csi
+
+  zizmor:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/zizmor.yml
+
+  check:
+    if: always()
+    needs: [test, lint, zizmor]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
