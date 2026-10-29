@@ -98,7 +98,11 @@ spec:
 
 ## Upgrading
 
-- **From 0.2.x:** the driver name changed from `mergerfs.csi.k8s.io` to `mergerfs.csi.blackdark.github.io` (`k8s.io` belongs to the Kubernetes project). Change `driver:` in every inline volume, PV and StorageClass, and delete the old `CSIDriver` object once nothing uses it. Pods keep their old pools until they restart.
+- **From 0.2.x:** the driver name changed from `mergerfs.csi.k8s.io` to `mergerfs.csi.blackdark.github.io` (`k8s.io` belongs to the Kubernetes project). Kubernetes does not allow changing a StorageClass provisioner or a PV's `csi.driver` in place, and the data lives on the branches, not in the volume, so recreating objects loses nothing:
+  1. Stop the pods using mergerfs volumes.
+  2. Delete the chart's StorageClass (`kubectl delete storageclass <name>`) before `helm upgrade`; the upgrade recreates it with the new provisioner. Existing PVs keep working until step 3.
+  3. For each static PV: save it (`kubectl get pv <name> -o yaml`), delete the PVC and PV, then re-apply both with `spec.csi.driver: mergerfs.csi.blackdark.github.io`, the same `volumeHandle` and `volumeAttributes`, and the PV's `claimRef` pointing at the PVC. Dynamic PVs: delete and recreate the PVC from the new StorageClass.
+  4. Change `driver:` in inline volumes, start the pods, and delete the old `CSIDriver` object (`kubectl delete csidriver mergerfs.csi.k8s.io`).
 - **From 0.1.x:** old pools break once. Restart the pods using them, set `allowedHostPaths` for hostPath branches, and `mountPod.uid`/`gid` to the data owner.
 
 ## Development
