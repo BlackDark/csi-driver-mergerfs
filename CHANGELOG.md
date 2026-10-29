@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.1](https://github.com/BlackDark/csi-driver-mergerfs/compare/v0.3.0...v0.3.1) (2026-10-29)
+
+
+### Documentation
+
+* note that release PRs need a manual CI run ([#25](https://github.com/BlackDark/csi-driver-mergerfs/issues/25)) ([79a24bd](https://github.com/BlackDark/csi-driver-mergerfs/commit/79a24bd0e228a267dfbe1ba04b79c98d377723e7))
+
 ## [0.3.0](https://github.com/BlackDark/csi-driver-mergerfs/compare/v0.2.0...v0.3.0) (2026-10-29)
 
 
