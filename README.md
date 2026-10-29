@@ -1,86 +1,105 @@
-# mergerfs-csi
+<div align="center">
 
-Node-local Kubernetes CSI driver that runs [`mergerfs`](https://github.com/trapexit/mergerfs) (FUSE) to union branch directories into a single volume mount for a pod. Optional minimal controller for dynamic PVCs (params → VolumeContext).
+# csi-driver-mergerfs
 
-**Driver name:** `mergerfs.csi.k8s.io`  
-**Status:** Phase 1–3 implemented (controller minimal).  
-**Platform:** Linux only (FUSE / kubelet host paths).
+**Kubernetes CSI driver for mergerfs: union a pod's volumes and allowed host paths into one volume.**
 
-## Docs
+[![CI](https://github.com/BlackDark/csi-driver-mergerfs/actions/workflows/ci.yml/badge.svg)](https://github.com/BlackDark/csi-driver-mergerfs/actions/workflows/ci.yml)
 
-| Doc | Topic |
-|-----|--------|
-| [docs/SPEC.md](docs/SPEC.md) | Spec / scope |
-| [docs/architecture.md](docs/architecture.md) | CSI node + controller design |
-| [docs/volume-layering.md](docs/volume-layering.md) | `pvcRef` / `emptyDirRef`, EXDEV anti-patterns |
-| [docs/meta-fuse-validation.md](docs/meta-fuse-validation.md) | Track B meta-fuse validation (failed on lab cluster) |
-| [docs/development.md](docs/development.md) | Build, test, layout |
+</div>
+
+Status: pre-alpha. Linux nodes, Kubernetes ≥1.34.
+
+## Why
+
+It replaces a host mergerfs mount plus a hostPath PV with a volume Kubernetes manages, for example a local disk in front of an rclone remote.
+
+- Each pool's mergerfs runs in its own unprivileged Mount Pod, so pools survive node plugin restarts and `helm upgrade` ([ADR 0001](docs/adr/0001-mount-pod-and-fusermount-shim.md)).
+- Branches are the pod's own volumes (any CSI PVC, inline CSI, emptyDir) or host paths below admin-allowed roots, each `RW`, `RO` or `NC` ([ADR 0002](docs/adr/0002-branch-visibility.md)).
+- The pool starts only once every volume branch is mounted and answers.
+
+## What works, what does not
+
+Full list with reasons: [docs/scope.md](docs/scope.md).
+
+Works:
+- Inline, Static and Dynamic Volumes; per-branch modes; allowlisted mergerfs options.
+- Pools keep serving through node plugin restarts and upgrades.
+- A crashed Mount Pod is reported (`MountLost` Event, volume health, metrics); with `mountPod.healWorkloads.enabled` its consumer is evicted and comes back with a fresh pool.
+
+Does not work, by design:
+- Sharing one pool across pods: every publish gets its own Mount Pod.
+- Per-caller file ownership: mergerfs runs as `mountPod.uid`, not root ([operations](docs/operations.md#mount-pod-uid)).
+- Branch volumes that no container mounts (kubelet does not mount them), non-CSI PVCs as branches, host paths outside `allowedHostPaths`.
+- Windows nodes, Kubernetes < 1.34.
+
+## Install
+
+The node plugin is privileged and Mount Pods use hostPath volumes, so the namespace needs the `privileged` Pod Security level.
+
+```bash
+kubectl create namespace csi-mergerfs
+kubectl label namespace csi-mergerfs pod-security.kubernetes.io/enforce=privileged
+helm install csi-mergerfs oci://ghcr.io/blackdark/csi-driver-mergerfs/charts/csi-driver-mergerfs --version <version> -n csi-mergerfs \
+  --set 'allowedHostPaths={/srv/indigo}' --set mountPod.uid=1000 --set mountPod.gid=1000
+```
+
+The image (`ghcr.io/blackdark/csi-driver-mergerfs:<appVersion>`) holds the driver, the fusermount shim and the upstream static mergerfs. Chart values: [values.yaml](charts/csi-driver-mergerfs/values.yaml). Verify signatures with:
+
+```bash
+cosign verify ghcr.io/blackdark/csi-driver-mergerfs:<version> \
+  --certificate-identity-regexp '^https://github.com/BlackDark/csi-driver-mergerfs/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ## Quickstart
 
-### Build
-
-```bash
-make build          # bin/mergerfs-csi
-make test           # go test ./...
-make docker-build   # linux/amd64 image (bakes mergerfs from GitHub releases)
-```
-
-Image always downloads a static mergerfs binary. Version pinned in `Dockerfile`:
-
-```dockerfile
-# renovate: datasource=github-releases depName=trapexit/mergerfs
-ARG MERGEFS_VERSION=2.42.0
-```
-
-Renovate (`renovate.json`) bumps `MERGEFS_VERSION` via regex customManager. Override at build time: `--build-arg MERGEFS_VERSION=...`.
-
-### Helm install
-
-```bash
-helm install mergerfs-csi ./charts/mergerfs-csi \
-  --namespace kube-system \
-  --set image.repository=<your-registry>/mergerfs-csi \
-  --set image.tag=<tag>
-```
-
-Chart deploys a DaemonSet (node plugin + `node-driver-registrar`, `--mode=node`) and a `CSIDriver` with `podInfoOnMount: true`.
-
-Optional controller + StorageClass:
-
-```bash
-helm upgrade --install mergerfs-csi ./charts/mergerfs-csi \
-  --namespace kube-system \
-  --set controller.enabled=true \
-  --set storageClass.create=true
-```
-
-### Example usage
-
-1. Mount branch volumes on the **same pod** (PVC, emptyDir, or hostPath).
-2. Mount a mergerfs CSI volume whose `volumeAttributes.branches` JSON references those volumes by name (or host paths).
-3. App uses the mergerfs mount only — do **not** remount branch subdirs separately into the app.
-
-Examples: `examples/static-pv-hostpath.yaml`, `examples/layered-pvc-emptydir.yaml`, `examples/layered-rclone.yaml`.
-
-Volume context sketch:
+A media library: new files go to the local disk, older ones live on an rclone remote ([csi-driver-rclone](https://github.com/BlackDark/csi-driver-rclone) PVC `media-rclone`, mounted with `uid`/`gid` 1000). mergerfs runs as uid 1000 (`mountPod.uid` above), the owner of both.
 
 ```yaml
-volumeAttributes:
-  branches: '[{"type":"pvcRef","volumeName":"src"},{"type":"emptyDirRef","volumeName":"scratch"}]'
-  mergerfsOptions: "category.create=mfs,cache.files=partial"
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jellyfin
+  namespace: media
+spec:
+  replicas: 1
+  selector: {matchLabels: {app: jellyfin}}
+  template:
+    metadata:
+      labels: {app: jellyfin}
+    spec:
+      securityContext: {runAsUser: 1000, runAsGroup: 1000}
+      containers:
+        - name: app
+          image: jellyfin/jellyfin
+          volumeMounts:
+            - {name: media, mountPath: /media}
+            # Branch volumes must be mounted by some container, or kubelet never mounts them.
+            - {name: remote, mountPath: /mnt/remote, readOnly: true}
+      volumes:
+        - name: remote
+          persistentVolumeClaim: {claimName: media-rclone}
+        - name: media
+          csi:
+            driver: mergerfs.csi.k8s.io
+            volumeAttributes:
+              branches: >-
+                [{"type":"hostPath","path":"/srv/indigo/media-local","mode":"RW"},
+                 {"type":"pvcRef","volumeName":"remote","mode":"NC"}]
+              mergerfsOptions: category.create=pfrd,func.getattr=newest,cache.files=off,dropcacheonclose=false
 ```
 
-See [volume layering](docs/volume-layering.md) for full branch types and path rules.
+`pvcRef` takes the pod's volume name, not the claim name. `NC` keeps creates off the remote; reads, renames and deletes still reach it. All keys: [volume parameters](docs/reference/volume-parameters.md).
 
-## Warnings
+## Docs
 
-- **FUSE privilege.** Node plugin needs privileged (or `SYS_ADMIN` + `/dev/fuse`) and hostPath access to the kubelet pods directory.
-- **EXDEV.** Mount the **pool root** only. No `subPath` into mergerfs. Do not bind-mount branch subdirs as separate volumes into the same container — rename/move across branches fails with `EXDEV`.
-- **PVC-as-branch = kubelet host paths.** Branch resolution uses paths under `/var/lib/kubelet/pods/<uid>/...`, not in-container mount paths. `pvcRef` maps pod volume name → bound PV name via the API (`…/kubernetes.io~csi/<pvName>/mount`).
-- **Linux only.** Unit tests may run on Darwin; real mount tests are Linux/build-tagged.
-- **Node-local.** No cross-node RWX without shared branch storage. Controller CreateVolume does not allocate disk — only echoes SC parameters.
+[docs/README.md](docs/README.md): scope, volume parameters, operations, metrics, design and ADRs.
+
+## Development
+
+`mise run check` (gofmt, vet, golangci-lint, unit tests, csi-sanity, shellcheck, helm lint) gates every commit. `mise run test:fuse` runs the shim + mergerfs FUSE test in Docker (`test:fuse:host` on a Linux host with sudo). `mise run e2e` brings up kind and runs `test/e2e`.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0. The image ships [mergerfs](https://github.com/trapexit/mergerfs) (ISC).
