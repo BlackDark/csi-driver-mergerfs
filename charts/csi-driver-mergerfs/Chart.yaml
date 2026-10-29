@@ -2,8 +2,8 @@ apiVersion: v2
 name: csi-driver-mergerfs
 description: Kubernetes CSI driver for mergerfs union volumes
 type: application
-version: 0.1.1
-appVersion: 0.1.1
+version: 0.2.0
+appVersion: 0.2.0
 home: https://github.com/BlackDark/csi-driver-mergerfs
 sources:
   - https://github.com/BlackDark/csi-driver-mergerfs
