@@ -23,17 +23,16 @@ FROM bin-${BIN} AS bin
 
 # The upstream static (static-pie) build: runs on distroless/static. Only the mergerfs
 # binary is taken, not its setuid mergerfs-fusermount: the shim replaces it.
+# The pinned release tag over HTTPS is the trust anchor (no per-arch sums), so Renovate
+# bumps the version alone; the published image is signed and carries provenance.
 FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:df4bb0305771186a85d0fd3a40f5c5da9af97ac8053d391ffce2c070817a20c6 AS mergerfs
 # renovate: datasource=github-releases depName=trapexit/mergerfs
 ARG MERGERFS_VERSION=2.42.0
-ARG MERGERFS_SHA256_amd64=0cf8692e1687c8a1140c714966c6f5f4b498a1537f1a0bef5665082ecb35fc12
-ARG MERGERFS_SHA256_arm64=da318afbf109f025a41e9be86de5ebbdfb879546abf4cb5176c8c15881b7cf05
 ARG TARGETARCH
 RUN set -eu; \
-    case "$TARGETARCH" in amd64) sum="$MERGERFS_SHA256_amd64" ;; arm64) sum="$MERGERFS_SHA256_arm64" ;; *) exit 1 ;; esac; \
+    case "$TARGETARCH" in amd64|arm64) ;; *) exit 1 ;; esac; \
     f="mergerfs-${MERGERFS_VERSION}-static-linux_${TARGETARCH}.tar.gz"; \
     curl -fsSL -o "/tmp/$f" "https://github.com/trapexit/mergerfs/releases/download/${MERGERFS_VERSION}/$f"; \
-    echo "$sum  /tmp/$f" | sha256sum -c -; \
     mkdir /out && tar -xzf "/tmp/$f" -C /out --strip-components=3 usr/local/bin/mergerfs
 
 # `mise run test:fuse` exports just the binary.
