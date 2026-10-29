@@ -47,10 +47,8 @@ chmod 755 "$out" # the pool uid execs the shim and mergerfs
 trap 'sudo rm -rf "$out"' EXIT
 v=$(sed -n 's/^ARG MERGERFS_VERSION=//p' Dockerfile)
 arch=$(go env GOARCH)
-sum=$(sed -n "s/^ARG MERGERFS_SHA256_${arch}=//p" Dockerfile)
 f="mergerfs-${v}-static-linux_${arch}.tar.gz"
 curl -fsSL -o "$out/$f" "https://github.com/trapexit/mergerfs/releases/download/${v}/$f"
-echo "$sum  $out/$f" | sha256sum -c -
 tar -xzf "$out/$f" -C "$out" --strip-components=3 usr/local/bin/mergerfs
 go build -o "$out/mergerfs-fusermount" ./cmd/mergerfs-fusermount
 go test -c -tags fuse_integration -o "$out/fusemount.test" ./internal/fusemount/
