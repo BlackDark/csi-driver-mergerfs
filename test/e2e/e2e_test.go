@@ -21,7 +21,7 @@ import (
 
 const (
 	appNS      = "e2e-app"
-	driverName = "mergerfs.csi.k8s.io"
+	driverName = "mergerfs.csi.blackdark.github.io"
 	busybox    = "busybox:1.37"
 	// hostRoot is allowedHostPaths in hack/e2e/up.sh, inside the kind node.
 	hostRoot = "/srv/e2e"

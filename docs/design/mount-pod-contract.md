@@ -5,8 +5,8 @@ How the node plugin and a Mount Pod work together. Background: [ADR 0001](../adr
 ## Names and paths
 
 - `<id>`: the first 16 hex characters of sha256(volume ID, NUL, target path). One pool per publish.
-- Mount Pod `mergerfs-pool-<id>` in the driver namespace. Labels `app.kubernetes.io/name=csi-driver-mergerfs`, `app.kubernetes.io/component=pool`, `mergerfs.csi.k8s.io/node=<node>`, `mergerfs.csi.k8s.io/id=<id>`. Annotations `mergerfs.csi.k8s.io/volume-id`, `…/target` and `…/workload` (`{"ns","name","uid"}` of the consumer pod, from `podInfoOnMount`).
-- Pool dir on the host: `<kubeletDir>/plugins/mergerfs.csi.k8s.io/pools/<id>/`, owned by the Mount Pod uid/gid, mode `0750`:
+- Mount Pod `mergerfs-pool-<id>` in the driver namespace. Labels `app.kubernetes.io/name=csi-driver-mergerfs`, `app.kubernetes.io/component=pool`, `mergerfs.csi.blackdark.github.io/node=<node>`, `mergerfs.csi.blackdark.github.io/id=<id>`. Annotations `mergerfs.csi.blackdark.github.io/volume-id`, `…/target` and `…/workload` (`{"ns","name","uid"}` of the consumer pod, from `podInfoOnMount`).
+- Pool dir on the host: `<kubeletDir>/plugins/mergerfs.csi.blackdark.github.io/pools/<id>/`, owned by the Mount Pod uid/gid, mode `0750`:
   - `fuse/`: the pool's FUSE mountpoint. Only the node plugin mounts it.
   - `handoff.sock`: unix socket served by the node plugin, mode `0660`.
 - The Mount Pod mounts the pool dir at `/run/mergerfs-pool` with propagation `None`, so the plugin's later mount on `fuse/` stays invisible to it. mergerfs is told to mount on `/run/mergerfs-pool/fuse`; nothing is ever mounted there.

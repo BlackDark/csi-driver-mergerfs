@@ -82,7 +82,7 @@ spec:
           persistentVolumeClaim: {claimName: media-rclone}
         - name: media
           csi:
-            driver: mergerfs.csi.k8s.io
+            driver: mergerfs.csi.blackdark.github.io
             volumeAttributes:
               branches: >-
                 [{"type":"hostPath","path":"/srv/indigo/media-local","mode":"RW"},
@@ -95,6 +95,11 @@ spec:
 ## Docs
 
 [docs/README.md](docs/README.md): scope, volume parameters, operations, metrics, design and ADRs.
+
+## Upgrading
+
+- **From 0.2.x:** the driver name changed from `mergerfs.csi.k8s.io` to `mergerfs.csi.blackdark.github.io` (`k8s.io` belongs to the Kubernetes project). Change `driver:` in every inline volume, PV and StorageClass, and delete the old `CSIDriver` object once nothing uses it. Pods keep their old pools until they restart.
+- **From 0.1.x:** old pools break once. Restart the pods using them, set `allowedHostPaths` for hostPath branches, and `mountPod.uid`/`gid` to the data owner.
 
 ## Development
 

@@ -59,7 +59,7 @@ func TestBuild(t *testing.T) {
 	for _, v := range pod.Spec.Volumes {
 		vols[v.Name] = v.HostPath.Path
 	}
-	want := map[string]string{"run": "/var/lib/kubelet/plugins/mergerfs.csi.k8s.io/pools/abc",
+	want := map[string]string{"run": "/var/lib/kubelet/plugins/mergerfs.csi.blackdark.github.io/pools/abc",
 		"branch-1": "/var/lib/kubelet/pods/u1/volumes/kubernetes.io~csi/pv/mount", "host-0": "/srv/indigo"}
 	if !reflect.DeepEqual(vols, want) {
 		t.Errorf("volumes: %v", vols)

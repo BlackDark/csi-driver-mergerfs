@@ -52,7 +52,7 @@ func mountPodOf(ctx context.Context, t *testing.T, consumer string) string {
 	var name string
 	poll(ctx, t, "mount pod of "+consumer, func() (bool, error) {
 		for _, p := range mountPods(ctx, t) {
-			if strings.Contains(p.Annotations["mergerfs.csi.k8s.io/workload"], `"name":"`+consumer+`"`) {
+			if strings.Contains(p.Annotations["mergerfs.csi.blackdark.github.io/workload"], `"name":"`+consumer+`"`) {
 				name = p.Name
 				return true, nil
 			}

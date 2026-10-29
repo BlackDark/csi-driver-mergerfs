@@ -152,7 +152,7 @@ func podNames(ps []corev1.Pod) string {
 }
 
 func TestScanNodeIgnoresOtherMounts(t *testing.T) {
-	infos := []mount.MountInfo{{MountPoint: "/k/plugins/mergerfs.csi.k8s.io/pools/a/fuse"}, {MountPoint: "/k/pods/u/volumes/x/fuse"}}
+	infos := []mount.MountInfo{{MountPoint: "/k/plugins/mergerfs.csi.blackdark.github.io/pools/a/fuse"}, {MountPoint: "/k/pods/u/volumes/x/fuse"}}
 	got := scanNode(nil, infos, "/k")
 	if len(got) != 1 || got[0].id != "a" || !got[0].fuse {
 		t.Errorf("got %+v", got)
