@@ -105,12 +105,12 @@
       enabled: false,
     },
     {
-      // The Dockerfile pins sha256 sums per arch next to the version; Renovate bumps only the
-      // version, so the image build fails until the sums are updated by hand in the same PR.
-      description: "mergerfs: review by hand, update the Dockerfile checksums",
+      // Only the version is pinned (no checksums), so the PR is self-contained; CI's
+      // test:fuse and e2e run the new binary. Majors still need a review.
+      description: "mergerfs: automerge minor and patch",
       matchPackageNames: ["trapexit/mergerfs"],
-      groupName: null,
-      automerge: false,
+      matchUpdateTypes: ["minor", "patch"],
+      automerge: true,
     },
     {
       description: "shellcheck: slow release cadence, still the standard shell linter",
