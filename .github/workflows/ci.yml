@@ -1,60 +1,209 @@
+# Rulesets require one check only: `check`, the gate over every job below.
+# e2e (kind, ~6-10 min) never runs on PRs or pushes: weekly on main, manual runs (Run workflow
+# on any branch, also a PR's; its `check` then reports on the PR head) and every
+# release (release.yml calls this workflow with e2e: true, release: true). Everything else runs on every PR
+# and push; docs-only PRs skip fuse. release.yml also needs this workflow's `check` on main.
+# Go caches: restored everywhere except release runs, saved only on main (push, schedule,
+# manual), never from PRs or release runs.
+# Keyed on go.sum: dependencies dominate compile time and change only with it.
 name: CI
 
 on:
   push:
     branches: [main]
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "17 3 * * 1" # Mondays 03:17 UTC, e2e on main
+  workflow_dispatch:
+    inputs:
+      e2e:
+        description: Run the kind e2e suite
+        type: boolean
+        default: true
+  workflow_call:
+    inputs:
+      e2e:
+        type: boolean
+        default: false
+      release:
+        description: Release run; restores and saves no caches
+        type: boolean
+        default: false
 
 permissions: {}
 
+concurrency:
+  group: ci-${{ github.ref }}${{ inputs.release && '-release' || '' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
+  # code=false only for a PR touching nothing but docs/** and *.md.
+  changes:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request'
+        with:
+          persist-credentials: false
+          fetch-depth: 2 # the PR merge commit and its base parent
+      - id: diff
+        run: |
+          code=true
+          if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            files=$(git diff --name-only HEAD^1 HEAD)
+            if [ -n "$files" ]; then
+              code=false
+              while IFS= read -r f; do
+                case "$f" in docs/* | *.md) ;; *) code=true ;; esac
+              done <<< "$files"
+            fi
+          fi
+          echo "code=$code" | tee -a "$GITHUB_OUTPUT"
+
   test:
-    runs-on: ubuntu-latest
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
         with:
-          go-version-file: mergerfs-csi/go.mod
-          cache-dependency-path: mergerfs-csi/go.sum
-      - name: Test
-        run: make test
-      - name: Build
-        run: make build
-      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
-      - name: Lint chart
-        run: make helm-lint
+          cache: ${{ !inputs.release }} # no cache in release runs
+      - id: go-dirs
+        run: |
+          { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
+      - id: go-cache
+        if: ${{ !inputs.release }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: go-test-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-test-${{ runner.os }}-${{ runner.arch }}-
+      # gofmt, vet, golangci-lint, unit tests, csi-sanity (test/sanity), helm lint
+      - run: mise run check
+      - if: >-
+          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
+          && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
-  lint:
-    runs-on: ubuntu-latest
+  workflows:
+    if: ${{ !github.event.pull_request.draft }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
-        with:
-          go-version-file: mergerfs-csi/go.mod
-          cache-dependency-path: mergerfs-csi/go.sum
-      - uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
-        with:
-          version: latest
-          working-directory: mergerfs-csi
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+      - run: zizmor --format=github .github/workflows
+      - run: actionlint
 
-  zizmor:
+  fuse:
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
     permissions:
       contents: read
-    uses: ./.github/workflows/zizmor.yml
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          cache: ${{ !inputs.release }} # no cache in release runs
+      - id: go-dirs
+        run: |
+          { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
+      - id: go-cache
+        if: ${{ !inputs.release }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: go-fuse-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-fuse-${{ runner.os }}-${{ runner.arch }}-
+      # Runner has /dev/fuse and passwordless sudo: no container, cached compile.
+      - run: mise run test:fuse:host
+      - if: >-
+          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
+          && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+
+  e2e:
+    # Never on PRs or pushes: schedule, manual run (input e2e), release (workflow_call e2e: true).
+    needs: changes
+    if: >-
+      ${{ needs.changes.outputs.code == 'true'
+      && (github.event_name == 'schedule' || inputs.e2e) }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 40
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          cache: ${{ !inputs.release }} # no cache in release runs
+      - id: go-dirs
+        run: |
+          { echo "path<<EOF"; go env GOMODCACHE GOCACHE; echo "$HOME/.cache/golangci-lint"; echo EOF; } >> "$GITHUB_OUTPUT"
+      - id: go-cache
+        if: ${{ !inputs.release }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: go-e2e-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('go.sum', 'mise.toml') }}
+          restore-keys: go-e2e-${{ runner.os }}-${{ runner.arch }}-
+      - run: mise run e2e
+      - if: >-
+          ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && !inputs.release
+          && steps.go-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.go-dirs.outputs.path }}
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+      - name: Collect logs
+        if: failure()
+        run: |
+          out="$RUNNER_TEMP/e2e-logs"
+          mkdir -p "$out"
+          kind export logs --name csi-mergerfs-e2e "$out/kind" || true
+          kubectl cluster-info dump --all-namespaces --output-directory "$out/cluster" || true
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: e2e-logs
+          path: ${{ runner.temp }}/e2e-logs
+          retention-days: 7
 
   check:
     if: always()
-    needs: [test, lint, zizmor]
-    runs-on: ubuntu-latest
+    needs: [changes, test, workflows, fuse, e2e]
+    runs-on: ubuntu-26.04
     timeout-minutes: 2
+    permissions: {}
     steps:
+      # A skipped job reports success; failed or cancelled ones must keep the gate red.
       - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
         run: exit 1

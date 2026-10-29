@@ -1,0 +1,70 @@
+[tools]
+go = "1.27.3"
+"aqua:golangci/golangci-lint" = "2.15.0"
+"aqua:zizmorcore/zizmor" = "1.31.1"
+actionlint = "1.7.12"
+shellcheck = "0.11.0"
+helm = "4.3.1"
+kubectl = "1.37.2"
+"aqua:kubernetes-sigs/kind" = "0.33.0"
+
+[tasks.check]
+description = "Everything CI checks"
+run = [
+  # go list skips gitignored refs/ (own go.mod); raw block escapes mise templating
+  '{% raw %}out=$(gofmt -l $(go list -f "{{.Dir}}" ./...)); test -z "$out" || { echo "$out"; exit 1; }{% endraw %}',
+  "go vet ./...",
+  "golangci-lint run",
+  "go test ./...",
+  "shellcheck hack/e2e/*.sh hack/release/*.sh",
+  "helm lint --strict charts/csi-driver-mergerfs",
+  "helm template t charts/csi-driver-mergerfs > /dev/null",
+  "helm template t charts/csi-driver-mergerfs --set mountPod.healWorkloads.enabled=true | grep -q 'pods/eviction'",
+  # one Bidirectional mount only: nested ones stack host mounts on every restart
+  "test \"$(helm template t charts/csi-driver-mergerfs --set 'allowedHostPaths={/srv/a,/srv/b}' | grep -c 'mountPropagation: Bidirectional')\" = 1",
+  "helm template t charts/csi-driver-mergerfs --set controller.enabled=false --set storageClass.enabled=true --set storageClass.parameters.branches=x > /dev/null",
+  "helm template t charts/csi-driver-mergerfs --api-versions monitoring.coreos.com/v1 --set metrics.serviceMonitor.enabled=true > /dev/null",
+]
+
+[tasks."test:fuse"]
+description = "FUSE handoff + shim + mergerfs integration test in a Linux container (needs Docker)"
+run = '''
+set -euo pipefail
+docker build --target mergerfs-bin -o type=local,dest=bin/mergerfs-static .
+docker run --rm --device /dev/fuse --cap-add SYS_ADMIN --security-opt apparmor=unconfined \
+  -v "$PWD":/src -w /src -v csi-driver-mergerfs-gomod:/go/pkg/mod -v csi-driver-mergerfs-gocache:/root/.cache/go-build \
+  -e MERGERFS_BIN=/src/bin/mergerfs-static/mergerfs \
+  golang:{{ tools.go.version }} \
+  go test -tags fuse_integration -run TestFuse -count=1 -v ./internal/fusemount/
+'''
+
+[tasks."test:fuse:host"]
+description = "test:fuse on a Linux host with passwordless sudo (CI): compiles as the user, runs as root"
+run = '''
+set -euo pipefail
+out="$(mktemp -d)"
+chmod 755 "$out" # the pool uid execs the shim and mergerfs
+trap 'sudo rm -rf "$out"' EXIT
+v=$(sed -n 's/^ARG MERGERFS_VERSION=//p' Dockerfile)
+arch=$(go env GOARCH)
+sum=$(sed -n "s/^ARG MERGERFS_SHA256_${arch}=//p" Dockerfile)
+f="mergerfs-${v}-static-linux_${arch}.tar.gz"
+curl -fsSL -o "$out/$f" "https://github.com/trapexit/mergerfs/releases/download/${v}/$f"
+echo "$sum  $out/$f" | sha256sum -c -
+tar -xzf "$out/$f" -C "$out" --strip-components=3 usr/local/bin/mergerfs
+go build -o "$out/mergerfs-fusermount" ./cmd/mergerfs-fusermount
+go test -c -tags fuse_integration -o "$out/fusemount.test" ./internal/fusemount/
+cd internal/fusemount
+sudo FUSE_IT_SHIM="$out/mergerfs-fusermount" MERGERFS_BIN="$out/mergerfs" "$out/fusemount.test" -test.run TestFuse -test.count=1 -test.v
+'''
+
+[tasks.e2e]
+description = "kind e2e: bring up cluster, install chart, run test/e2e"
+run = [
+  "bash hack/e2e/up.sh",
+  "go test -tags e2e -count=1 -v -parallel 8 -timeout 25m ./test/e2e/",
+]
+
+[tasks."e2e:down"]
+description = "Delete the e2e kind cluster"
+run = "kind delete cluster --name csi-mergerfs-e2e"
