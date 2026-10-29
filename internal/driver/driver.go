@@ -2,4 +2,4 @@
 package driver
 
 // Name is the CSI driver name and the prefix of its labels and annotations.
-const Name = "mergerfs.csi.k8s.io"
+const Name = "mergerfs.csi.blackdark.github.io"

@@ -43,4 +43,4 @@ Not allowed: options that move the pool or its branches (`branches`, `srcmounts`
 
 - Inline (`csi:` in the pod spec): the common case, since branches are the pod's own volumes.
 - Static PV: the same attributes in `csi.volumeAttributes`; `volumeHandle` is free-form.
-- Dynamic (StorageClass `provisioner: mergerfs.csi.k8s.io`): the parameters are copied into the PV. The controller checks the syntax; the `hostPath` allowlist is checked by the node at publish. `*Ref` branches then name volumes every consuming pod must have. Deleting the PVC removes only the PV object.
+- Dynamic (StorageClass `provisioner: mergerfs.csi.blackdark.github.io`): the parameters are copied into the PV. The controller checks the syntax; the `hostPath` allowlist is checked by the node at publish. `*Ref` branches then name volumes every consuming pod must have. Deleting the PVC removes only the PV object.

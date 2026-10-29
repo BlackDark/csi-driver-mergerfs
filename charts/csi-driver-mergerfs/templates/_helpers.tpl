@@ -1,4 +1,4 @@
-{{- define "csi-driver-mergerfs.driverName" -}}mergerfs.csi.k8s.io{{- end }}
+{{- define "csi-driver-mergerfs.driverName" -}}mergerfs.csi.blackdark.github.io{{- end }}
 
 {{- define "csi-driver-mergerfs.fullname" -}}
 {{- if contains .Chart.Name .Release.Name }}{{ .Release.Name | trunc 63 | trimSuffix "-" }}
