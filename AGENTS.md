@@ -66,3 +66,4 @@ Leave every touched area cleaner than you found it.
 - `gofmt -l .` would walk `refs/`; the check formats only `go list ./...` package dirs. `rg` over the repo root walks `refs/` too: scope searches to `cmd internal test charts docs`.
 - mergerfs only calls the shim with `-o auto_unmount`; without it, it tries `/dev/fuse` itself and fails in the Mount Pod.
 - kubelet's `pods/<uid>` and `kubernetes.io~csi/<name>` dirs are root `0750`: mount branch volumes into the Mount Pod one by one, never via a parent dir.
+- Release PRs get no CI by themselves: no `RELEASE_PLEASE_TOKEN` secret is set (by choice, for now), and PRs opened with `GITHUB_TOKEN` trigger no workflows. Before merging one, run CI by hand: `gh workflow run ci.yml --ref <release-please branch> -f e2e=true`, or close and reopen the PR. Adding the secret (fine-grained PAT, Contents + Pull requests read/write, or a GitHub App token) removes this step.
