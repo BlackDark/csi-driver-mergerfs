@@ -216,3 +216,22 @@ func TestHealEvictsWithUIDPrecondition(t *testing.T) {
 		t.Errorf("eviction %+v", e)
 	}
 }
+
+// A hostPath-only pool never reads the consumer pod, but its loss still reaches it.
+func TestHostPathOnlyPoolLostReportsConsumer(t *testing.T) {
+	h := newHarness(t)
+	h.readyBranches()
+	vc := h.mediaLayout()
+	vc["branches"] = `[{"type":"hostPath","path":"` + h.localBranch() + `"}]`
+	if _, err := h.srv.NodePublishVolume(context.Background(), publishReq(h.target(), vc)); err != nil {
+		t.Fatal(err)
+	}
+	pod := h.mountPods()[0]
+	if w := mountpod.DecodeWorkload(&pod); w == nil || w.Name != "jellyfin-0" || w.UID != "u1" {
+		t.Fatalf("workload annotation: %+v", w)
+	}
+	h.srv.MountPodChanged(&pod, true)
+	eventually(t, "MountLost on the consumer", func() bool {
+		return strings.Contains(reasons(h.events()), ReasonMountLost+"@jellyfin-0")
+	})
+}

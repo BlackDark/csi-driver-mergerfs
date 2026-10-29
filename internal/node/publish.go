@@ -144,10 +144,12 @@ func (s *Server) preparePool(ctx context.Context, id, volumeID, target string, v
 	if err := s.waitBranches(ctx, resolved); err != nil {
 		return nil, specError(err)
 	}
-	var w *mountpod.Workload
 	if consumer != nil {
-		w = &mountpod.Workload{Namespace: consumer.Namespace, Name: consumer.Name, UID: string(consumer.UID)}
 		ref.UID = consumer.UID
+	}
+	var w *mountpod.Workload
+	if ref != nil { // hostPath-only pools skip reading the pod but still report to it
+		w = &mountpod.Workload{Namespace: ref.Namespace, Name: ref.Name, UID: string(ref.UID)}
 	}
 	pod, err := mountpod.Build(mountpod.Input{Config: s.cfg.Pod, NodeName: s.cfg.NodeID, ID: id, VolumeID: volumeID,
 		Target: target, Workload: w, Spec: spec, Branches: resolved})
