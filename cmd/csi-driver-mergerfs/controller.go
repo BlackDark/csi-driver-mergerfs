@@ -1,0 +1,60 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/container-storage-interface/spec/lib/go/csi"
+	"google.golang.org/grpc"
+
+	"github.com/BlackDark/csi-driver-mergerfs/internal/controller"
+	"github.com/BlackDark/csi-driver-mergerfs/internal/csiserver"
+	"github.com/BlackDark/csi-driver-mergerfs/internal/identity"
+	"github.com/BlackDark/csi-driver-mergerfs/internal/metrics"
+)
+
+type controllerFlags struct {
+	endpoint    string
+	metricsAddr string
+	logLevel    slog.Level
+}
+
+func parseControllerFlags(args []string, stderr io.Writer) (controllerFlags, error) {
+	var f controllerFlags
+	fs := flag.NewFlagSet("controller", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.StringVar(&f.endpoint, "endpoint", "unix:///csi/csi.sock", "CSI endpoint")
+	fs.StringVar(&f.metricsAddr, "metrics-addr", ":9809", "address for /metrics; empty disables")
+	fs.TextVar(&f.logLevel, "log-level", slog.LevelInfo, "log level")
+	if err := fs.Parse(args); err != nil {
+		return f, err
+	}
+	if fs.NArg() > 0 {
+		return f, fmt.Errorf("%w: controller: unexpected arguments %v", errUsage, fs.Args())
+	}
+	return f, nil
+}
+
+func runController(args []string, stderr io.Writer) error {
+	f, err := parseControllerFlags(args, stderr)
+	if err != nil {
+		return err
+	}
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: f.logLevel}))
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	reg := metrics.NewRegistry()
+	rpc := metrics.NewGRPC(reg)
+	metrics.ServeBackground(ctx, f.metricsAddr, metrics.Handler(reg, nil), log)
+	return csiserver.Serve(ctx, f.endpoint, log, func(g *grpc.Server) {
+		csi.RegisterIdentityServer(g, &identity.Server{Version: version, Controller: true})
+		csi.RegisterControllerServer(g, &controller.Server{Log: log})
+	}, rpc.Interceptor(time.Now))
+}

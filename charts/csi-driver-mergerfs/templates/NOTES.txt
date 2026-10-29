@@ -1,0 +1,11 @@
+csi-driver-mergerfs {{ .Chart.AppVersion }} installed in namespace {{ .Release.Namespace }}.
+
+The node plugin is privileged and Mount Pods use hostPath: label the namespace for Pod Security Admission:
+  kubectl label namespace {{ .Release.Namespace }} pod-security.kubernetes.io/enforce=privileged
+
+{{- if not .Values.allowedHostPaths }}
+
+hostPath branches are disabled; set allowedHostPaths to allow them.
+{{- end }}
+
+Usage: https://github.com/BlackDark/csi-driver-mergerfs#quickstart

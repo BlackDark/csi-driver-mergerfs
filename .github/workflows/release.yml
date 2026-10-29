@@ -1,69 +1,167 @@
+# Called by release-please.yml with the tag vX.Y.Z it just released → image tags x.y.z, x.y,
+# latest and the OCI chart; release-please owns the tag and the GitHub release. The tag must
+# equal the chart version and appVersion. Manual run on a branch → image tag `edge` only.
+# One job builds the amd64 + arm64 index: Go cross-compiles on the runner, no QEMU.
+# Images and the chart are signed keyless with cosign (GitHub OIDC).
+# A tag ships only a commit on main whose CI run (ci.yml on main) passed `check`, and the
+# full CI including e2e passes again on it (job `ci`, no caches restored).
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag vX.Y.Z, already pushed
+        type: string
+        required: true
+  workflow_dispatch:
 
 permissions: {}
 
+concurrency:
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ inputs.tag }} # empty on manual runs
+  IMAGE: ghcr.io/blackdark/csi-driver-mergerfs
+  CHART_REPO: oci://ghcr.io/blackdark/csi-driver-mergerfs/charts
+
 jobs:
-  release:
-    runs-on: ubuntu-latest
+  # Full CI including e2e on the tag commit: e2e is not part of every main push.
+  ci:
+    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] actionlint rejects $/ syntax
     permissions:
-      contents: write
-      packages: write
+      contents: read
+    with:
+      e2e: true
+      release: ${{ inputs.tag != '' }}
+
+  # The tag commit is on main and CI on main passed for it; waits while that run is in progress.
+  main-ci:
+    if: inputs.tag != ''
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+      checks: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+      - name: Tag commit is on main
+        run: |
+          sha=$(git rev-parse "$TAG^{commit}")
+          git merge-base --is-ancestor "$sha" origin/main ||
+            { echo "::error::$sha is not on main"; exit 1; }
+          echo "SHA=$sha" >> "$GITHUB_ENV"
+      - name: CI on main passed for the tag commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash hack/release/check-main-ci.sh "$GITHUB_REPOSITORY" "$SHA"
 
-      - uses: docker/setup-qemu-action@49b3bc8e6bdd4a60e6116a5414239cba5943d3cf # v3.2.0
-      - uses: docker/setup-buildx-action@b5ca514318bd6ebac0fb2aedd5d36ec1b5c232a2 # v3.10.0
+  version:
+    if: inputs.tag != ''
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+      - run: bash hack/release/check-version.sh "$TAG"
 
-      - uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+  # One job: the Dockerfile cross-compiles on the build platform (CGO off) and the final stage is
+  # COPY only, so arm64 needs no QEMU or arm runner.
+  image:
+    needs: [ci, main-ci, version]
+    if: >-
+      ${{ !cancelled() && needs.ci.result == 'success'
+      && needs.main-ci.result != 'failure' && needs.version.result != 'failure' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+      - id: ver
+        run: |
+          if [ -n "$TAG" ]; then v="${TAG#v}"; else v="edge-${GITHUB_SHA::7}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - id: meta
-        uses: docker/metadata-action@902fa8ec7d6ecbf8d84d538b9b233a880e428804 # v5.7.0
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
-          images: ghcr.io/${{ github.repository }}
+          images: ${{ env.IMAGE }}
+          # The ref is main, not the tag: semver from the tag input; edge only for manual runs.
+          flavor: latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern=v{{version}}
-            type=raw,value=latest
-
-      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+            type=semver,pattern={{version}},value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=raw,value=latest,enable=${{ inputs.tag != '' }}
+            type=raw,value=edge,enable=${{ inputs.tag == '' }}
+      - id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          push: true
           platforms: linux/amd64,linux/arm64
+          build-args: VERSION=${{ steps.ver.outputs.version }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
-
-      - name: Package Helm chart
+          push: true
+          provenance: mode=max
+          sbom: true
+          cache-from: type=registry,ref=${{ env.IMAGE }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE }}:buildcache,mode=max
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Sign the index
         env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          ver="${VERSION#v}"
-          helm package charts/mergerfs-csi \
-            --version "${ver}" \
-            --app-version "${ver}"
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: cosign sign --yes "$IMAGE@$DIGEST"
 
-      - name: Create GitHub release
+  chart:
+    needs: image
+    if: ${{ !cancelled() && needs.image.result == 'success' && inputs.tag != '' }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+      id-token: write # cosign keyless
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+      - uses: jdx/mise-action@6be3c7ed4c21d4f76b208d351d95aac273ebb76d # v5.2.4
+        with:
+          cache: false # no cache restored into a publishing job
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+      - name: Package, push and sign
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ github.ref_name }}
+          REGISTRY_USER: ${{ github.actor }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ver="${VERSION#v}"
-          gh release create "${VERSION}" \
-            --title "v${ver}" \
-            --generate-notes \
-            mergerfs-csi-"${ver}".tgz
+          helm registry login ghcr.io -u "$REGISTRY_USER" --password-stdin <<< "$REGISTRY_TOKEN"
+          cosign login ghcr.io -u "$REGISTRY_USER" --password-stdin <<< "$REGISTRY_TOKEN"
+          pkg=$(helm package charts/csi-driver-mergerfs -d "$RUNNER_TEMP" | sed -n 's/^Successfully packaged chart and saved it to: //p')
+          out=$(helm push "$pkg" "$CHART_REPO" 2>&1) || { echo "$out"; exit 1; }
+          echo "$out"
+          digest=$(sed -n 's/^Digest: *//p' <<< "$out")
+          [ -n "$digest" ] || { echo "::error::no digest in helm push output"; exit 1; }
+          cosign sign --yes "${CHART_REPO#oci://}/csi-driver-mergerfs@$digest"

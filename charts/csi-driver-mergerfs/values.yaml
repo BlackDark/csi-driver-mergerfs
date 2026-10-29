@@ -1,0 +1,131 @@
+# Driver image; also the Mount Pod image (it ships mergerfs and the fusermount shim).
+image:
+  repository: ghcr.io/blackdark/csi-driver-mergerfs
+  # Defaults to the chart appVersion.
+  tag: ""
+  # Optional; when set the image is referenced as repository@digest.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# Host path of the kubelet root dir; k0s and some distros differ.
+kubeletDir: /var/lib/kubelet
+
+# Host path roots hostPath branches may use, e.g. [/srv/media]. Empty: hostPath branches
+# are rejected. Each root is mounted read-only into the node plugin (existence checks)
+# and read-write into the Mount Pods of pools that use it. Anyone who can create a pod
+# with an inline volume of this driver can read and write below these roots as
+# mountPod.uid, so keep them narrow.
+allowedHostPaths: []
+
+logLevel: info
+
+node:
+  # Bound on waiting for a pool's branches to be mounted and for mergerfs to serve.
+  publishTimeout: 90s
+  priorityClassName: system-node-critical
+  terminationGracePeriodSeconds: 30
+  tolerations:
+    - operator: Exists
+  nodeSelector: {}
+  affinity: {}
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 128Mi
+  podAnnotations: {}
+
+# Controller: unprivileged Deployment behind external-provisioner, for Dynamic Volumes
+# (StorageClass parameters become the volume attributes).
+controller:
+  enabled: true
+  # One active replica; extra replicas wait on the leader election lease.
+  replicas: 1
+  # Pod port the liveness-probe sidecar serves on.
+  livenessProbePort: 9808
+  priorityClassName: ""
+  tolerations: []
+  nodeSelector: {}
+  affinity: {}
+  resources:
+    requests:
+      cpu: 5m
+      memory: 16Mi
+    limits:
+      memory: 64Mi
+  podAnnotations: {}
+
+# Optional StorageClass for Dynamic Volumes. pvcRef/emptyDirRef/csiRef branches name
+# volumes every consuming pod must have.
+storageClass:
+  enabled: false
+  name: mergerfs
+  default: false
+  # Delete removes only the PV object: DeleteVolume never touches branch data.
+  reclaimPolicy: Delete
+  # Volume attributes (docs/reference/volume-parameters.md); branches is required.
+  parameters: {}
+  #   branches: '[{"type":"hostPath","path":"/srv/media"}]'
+  #   mergerfsOptions: category.create=mfs
+
+# Mount Pods are created by the node plugin, one per published pool.
+mountPod:
+  # Non-root uid/gid mergerfs runs as. mergerfs reads and writes every branch as this
+  # uid, whatever uid the consumer's process has: match the owner of the branch data.
+  uid: 65532
+  gid: 65532
+  priorityClassName: system-node-critical
+  # Mount Pod tolerations; null or [] (default null) uses node.tolerations.
+  tolerations: null
+  # After a lost Mount Pod, evict the consumer pods whose pool died, so their
+  # controller recreates them and they remount. Pods without a controller are
+  # left alone. Grants the node plugin pods/eviction create. Risks: docs/operations.md.
+  healWorkloads:
+    enabled: false
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+
+# Prometheus metrics of the node plugin and controller (docs/reference/metrics.md). The
+# endpoints are unauthenticated plain HTTP inside the cluster; restrict them with a
+# NetworkPolicy if needed.
+metrics:
+  enabled: true
+  port: 9809
+  # ServiceMonitor through a headless metrics Service; needs the monitoring.coreos.com/v1 CRDs.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+
+sidecars:
+  nodeDriverRegistrar:
+    image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.18.0@sha256:b7fefd08651f00ac4df1a196ed4c621c2451fbb899297fe9fad9e36c667af0c0
+    resources:
+      requests:
+        cpu: 5m
+        memory: 16Mi
+      limits:
+        memory: 64Mi
+  provisioner:
+    image: registry.k8s.io/sig-storage/csi-provisioner:v6.4.0@sha256:6ebe60fd8ed67a7f8a90d34402e9e706b274e53612d6fa5fbb8285728db622e2
+    resources:
+      requests:
+        cpu: 10m
+        memory: 32Mi
+      limits:
+        memory: 128Mi
+  livenessProbe:
+    image: registry.k8s.io/sig-storage/livenessprobe:v2.20.0@sha256:19f2cf2f40e1987c7943945deca5f65cd4e4bf5cc0657fc78a5df131861578e8
+    # Pod port the probe serves on; the pod has no hostNetwork.
+    port: 9808
+    resources:
+      requests:
+        cpu: 5m
+        memory: 16Mi
+      limits:
+        memory: 64Mi

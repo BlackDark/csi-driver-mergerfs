@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "csi-driver-mergerfs.labels" . | nindent 4 }}
+---
+# Mount Pods live in the release namespace only.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "csi-driver-mergerfs.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "csi-driver-mergerfs.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+    namespace: {{ .Release.Namespace }}
+---
+# Branch resolution reads the consumer pod, its PVCs and their PVs; MountLost Events go
+# on the consumer pod, which may be in any namespace.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+  labels:
+    {{- include "csi-driver-mergerfs.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: [pods, persistentvolumeclaims, persistentvolumes]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [events]
+    verbs: [create, patch]
+  {{- if .Values.mountPod.healWorkloads.enabled }}
+  # Workload healing (mountPod.healWorkloads): evict pods whose Mount Pod was lost.
+  - apiGroups: [""]
+    resources: [pods/eviction]
+    verbs: [create]
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+  labels:
+    {{- include "csi-driver-mergerfs.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "csi-driver-mergerfs.fullname" . }}-node
+    namespace: {{ .Release.Namespace }}

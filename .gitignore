@@ -10,3 +10,4 @@ coverage.html
 *.swp
 .DS_Store
 vendor/
+refs/
