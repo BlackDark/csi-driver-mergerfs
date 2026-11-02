@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1](https://github.com/BlackDark/csi-driver-mergerfs/compare/v0.3.0...v0.3.1) (2026-11-02)
+
+
+### Bug Fixes
+
+* **deps:** pin dependencies ([#27](https://github.com/BlackDark/csi-driver-mergerfs/issues/27)) ([bb67351](https://github.com/BlackDark/csi-driver-mergerfs/commit/bb67351ce6e68049f8889d5200e27438a7857c1a))
+
+
+### Documentation
+
+* note that release PRs need a manual CI run ([#25](https://github.com/BlackDark/csi-driver-mergerfs/issues/25)) ([79a24bd](https://github.com/BlackDark/csi-driver-mergerfs/commit/79a24bd0e228a267dfbe1ba04b79c98d377723e7))
+
 ## [0.3.0](https://github.com/BlackDark/csi-driver-mergerfs/compare/v0.2.0...v0.3.0) (2026-10-29)
 
 
