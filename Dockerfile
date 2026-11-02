@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # build: compile in the image (release); local: hack/e2e/up.sh prebuilt bin/.
 ARG BIN=build
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:df4bb0305771186a85d0fd3a40f5c5da9af97ac8053d391ffce2c070817a20c6 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -25,7 +25,7 @@ FROM bin-${BIN} AS bin
 # binary is taken, not its setuid mergerfs-fusermount: the shim replaces it.
 # The pinned release tag over HTTPS is the trust anchor (no per-arch sums), so Renovate
 # bumps the version alone; the published image is signed and carries provenance.
-FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:df4bb0305771186a85d0fd3a40f5c5da9af97ac8053d391ffce2c070817a20c6 AS mergerfs
+FROM --platform=$BUILDPLATFORM golang:1.27.3-bookworm@sha256:d9b6a1beb9474adc2a1ce842573639b44b2a0dd49b6669f51d3821baf9ec37c9 AS mergerfs
 # renovate: datasource=github-releases depName=trapexit/mergerfs
 ARG MERGERFS_VERSION=2.42.0
 ARG TARGETARCH
