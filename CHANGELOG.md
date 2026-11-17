@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.1](https://github.com/BlackDark/csi-driver-mergerfs/compare/v0.3.0...v0.3.1) (2026-11-17)
+
+
+### Bug Fixes
+
+* **deps:** pin dependencies ([#27](https://github.com/BlackDark/csi-driver-mergerfs/issues/27)) ([bb67351](https://github.com/BlackDark/csi-driver-mergerfs/commit/bb67351ce6e68049f8889d5200e27438a7857c1a))
+* **deps:** update all minor updates ([#31](https://github.com/BlackDark/csi-driver-mergerfs/issues/31)) ([0a1e5fb](https://github.com/BlackDark/csi-driver-mergerfs/commit/0a1e5fbd5d26ce1253698d6de16f84dd662c0d7e))
+* **deps:** update module golang.org/x/sys to v0.50.0 ([#34](https://github.com/BlackDark/csi-driver-mergerfs/issues/34)) ([b4e6b08](https://github.com/BlackDark/csi-driver-mergerfs/commit/b4e6b08d43ff351f6d1c0a64f8bf85d9d148b70e))
+
+
+### Documentation
+
+* note that release PRs need a manual CI run ([#25](https://github.com/BlackDark/csi-driver-mergerfs/issues/25)) ([79a24bd](https://github.com/BlackDark/csi-driver-mergerfs/commit/79a24bd0e228a267dfbe1ba04b79c98d377723e7))
+
 ## [0.3.0](https://github.com/BlackDark/csi-driver-mergerfs/compare/v0.2.0...v0.3.0) (2026-10-29)
 
 
